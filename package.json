@@ -3,6 +3,7 @@
   "version": "1.0.0-pre",
   "description": "Threshold Network tBTC Cross-Chain Relayer",
   "main": "index.ts",
+  "packageManager": "npm@11.2.0",
   "scripts": {
     "start": "npm run build && node --env-file .env dist/index.js",
     "start:dev": "npm run build && node dist/index.js",
