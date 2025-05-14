@@ -1,4 +1,4 @@
-import { BigNumber, ethers } from 'ethers';
+import { ethers } from 'ethers';
 import { NonceManager } from '@ethersproject/experimental';
 
 import { ChainHandlerInterface } from '../interfaces/ChainHandler.interface';
@@ -8,22 +8,15 @@ import { FundingTransaction } from '../types/FundingTransaction.type';
 import { LogError, LogMessage, LogWarning } from '../utils/Logs';
 import {
   getJsonById,
-  getAllJsonOperationsByStatus,
   writeJson,
 } from '../utils/JsonUtils';
 import {
   createDeposit,
-  updateToInitializedDeposit,
-  updateToFinalizedDeposit,
-  updateLastActivity,
   getDepositId,
 } from '../utils/Deposits';
 import { getFundingTxHash } from '../utils/GetTransactionHash';
-import { DepositStatus } from '../types/DepositStatus.enum';
 
-import { L1BitcoinDepositorABI } from '../interfaces/L1BitcoinDepositor';
 import { L2BitcoinDepositorABI } from '../interfaces/L2BitcoinDepositor';
-import { TBTCVaultABI } from '../interfaces/TBTCVault';
 import { logDepositError } from '../utils/AuditLog';
 
 import { BaseChainHandler } from './BaseChainHandler';

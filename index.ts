@@ -15,8 +15,8 @@ import compression from 'compression';
 import Routes from './routes/Routes';
 
 // Utils
-import { LogMessage, LogError, LogWarning } from './utils/Logs';
-import { initializeChain } from './services/Core';
+import { LogMessage, LogError } from './utils/Logs';
+import { initializeChain, initializeL2RedemptionService } from './services/Core';
 import { initializeAuditLog } from './utils/AuditLog';
 
 // -------------------------------------------------------------------------
@@ -80,15 +80,21 @@ try {
   process.exit(1); // Exit if audit log fails
 }
 
-// Initialize chain handler
-let chainInitializationSuccess = false;
 (async () => {
   try {
     LogMessage('Attempting to initialize chain handler...');
-    await initializeChain();
-    chainInitializationSuccess = true;
-    LogMessage('Chain handler initialized successfully.');
+    const chainInitializationSuccess = await initializeChain();
+    if (!chainInitializationSuccess) {
+      LogError('Failed to initialize chain handler.', new Error('Failed to initialize chain handler.'));
+      process.exit(1);
+    }
 
+    LogMessage('Attempting to initialize L2 redemption listener...');
+    const redemptionListenerInitializationSuccess = await initializeL2RedemptionService();
+    if (!redemptionListenerInitializationSuccess) {
+      LogError('Failed to initialize L2 redemption listener.', new Error('Failed to initialize L2 redemption listener.'));
+      process.exit(1)
+    }
     // Start Cron Jobs only if chain initialization was successful
     const { startCronJobs } = await import('./services/Core');
     startCronJobs();
@@ -98,28 +104,14 @@ let chainInitializationSuccess = false;
       'FATAL: Failed to initialize chain handler or dependent services:',
       error
     );
-    // Decide if the app should exit or run in a degraded state
-    // process.exit(1); // Option: Exit if chain handler is critical
-    LogWarning(
-      'Running without active chain handler or cron jobs due to initialization error.'
-    );
+    process.exit(1);
   }
 
-  // Start the server regardless of chain init success? Or only if successful?
-  // Let's start it anyway to provide basic API status, but log a warning.
-
-  // --- Add Log ---
   LogMessage(`Attempting to start server on port ${PORT}...`);
 
   app
     .listen(PORT, () => {
-      // --- Add Log ---
       LogMessage(`Server is running on port ${PORT}`);
-      if (!chainInitializationSuccess) {
-        LogWarning(
-          'Server started, but chain handler failed to initialize. Service may be degraded.'
-        );
-      }
     })
     .on('error', (err: any) => {
       if (err.code === 'EADDRINUSE') {
@@ -128,6 +120,6 @@ let chainInitializationSuccess = false;
       } else {
         LogError(`FATAL: Failed to start server:`, err);
       }
-      process.exit(1); // Exit if server fails to start
+      process.exit(1);
     });
 })(); // Immediately invoke the async function

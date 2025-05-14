@@ -27,8 +27,20 @@ export interface ChainConfig {
   /** Address of the L1BitcoinDepositor contract */
   l1ContractAddress: string;
 
+  /** Address of the L1BitcoinRedeemer contract */
+  l1BitcoinRedeemerAddress: string;
+
   /** Address of the L2BitcoinDepositor contract */
   l2ContractAddress: string;
+
+  /** Address of the L2BitcoinRedeemer contract */
+  l2BitcoinRedeemerAddress: string;
+
+  /** Address of the L2WormholeGateway contract */
+  l2WormholeGatewayAddress: string;
+
+  /** Wormhole Chain ID for the L2 network */
+  l2WormholeChainId: number | string;
 
   /** Address of the TBTCVault contract */
   vaultAddress: string;
