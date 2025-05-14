@@ -4,13 +4,17 @@ Based on [L2 tBTC SDK Relayer Implementation](https://thresholdnetwork.notion.si
 
 ## Table of Contents
 
-- [Project Overview](#project-overview)
-- [Docker Setup](#docker-setup)
-- [Libraries Used](#libraries-used)
-  - [Dependencies](#dependencies)
-  - [DevDependencies](#devdependencies)
-- [How to Start the Project](#how-to-start-the-project)
-- [Project Scripts](#project-scripts)
+- [Threshold Network | tBTC Cross-Chain Relayer](#threshold-network--tbtc-cross-chain-relayer)
+  - [Table of Contents](#table-of-contents)
+  - [Project Overview](#project-overview)
+  - [Docker Setup](#docker-setup)
+  - [Libraries Used](#libraries-used)
+    - [Dependencies](#dependencies)
+    - [DevDependencies](#devdependencies)
+  - [How to Start the Project (Local)](#how-to-start-the-project-local)
+    - [Development Mode](#development-mode)
+  - [Project Scripts](#project-scripts)
+  - [CI - GitHub Actions](#ci---github-actions)
 
 ## Project Overview
 
@@ -75,3 +79,14 @@ The following npm scripts are avaliable:
 
     -   `npm run dev`: Runs the application in development mode.
     -   `npm start`: Runs the application in production mode
+
+## CI - GitHub Actions
+
+You can run the CI workflow locally by running:
+
+```bash
+gh act
+```
+
+
+
