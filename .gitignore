@@ -1,5 +1,4 @@
 /node_modules
-package-lock.json
 
 /data
 /dist
@@ -11,6 +10,8 @@ package-lock.json
 .cursor
 
 /coverage
+.eslintcache
+
 
 /logs
 /data

@@ -7,11 +7,11 @@ RUN git config --global url."https://".insteadOf git://
 
 COPY package*.json .
 
-RUN yarn
+RUN npm install
 
 COPY . .
 
-RUN yarn run build
+RUN npm run build
 
 FROM node:20-alpine3.16 as production
 
