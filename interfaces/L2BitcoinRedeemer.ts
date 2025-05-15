@@ -5,8 +5,14 @@ export const L2BitcoinRedeemerABI = [
             {
                 "indexed": true,
                 "internalType": "bytes20",
-                "name": "walletPubKeyHash",
+                "name": "walletPubKey",
                 "type": "bytes20"
+            },
+            {
+                "indexed": false,
+                "internalType": "struct BitcoinTx.UTXO",
+                "name": "mainUtxo",
+                "type": "tuple"
             },
             {
                 "indexed": false,
@@ -15,35 +21,11 @@ export const L2BitcoinRedeemerABI = [
                 "type": "bytes"
             },
             {
-                "indexed": true,
-                "internalType": "address",
-                "name": "redeemer",
-                "type": "address"
-            },
-            {
                 "indexed": false,
                 "internalType": "uint64",
-                "name": "requestedAmount",
+                "name": "amount",
                 "type": "uint64"
             },
-            {
-                "indexed": false,
-                "internalType": "uint64",
-                "name": "treasuryFee",
-                "type": "uint64"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint64",
-                "name": "txMaxFee",
-                "type": "uint64"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "l2Identifier",
-                "type": "uint256"
-            }
         ],
         "name": "RedemptionRequested",
         "type": "event"

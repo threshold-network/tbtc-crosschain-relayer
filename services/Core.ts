@@ -11,7 +11,10 @@ import { L2RedemptionService } from './L2RedemptionService';
 // ---------------------------------------------------------------
 const requireEnv = (envVar: string) => {
   if (!process.env[envVar]) {
-    LogError(`Environment variable ${envVar} is not set.`, new Error(`Environment variable ${envVar} is not set.`));
+    LogError(
+      `Environment variable ${envVar} is not set.`,
+      new Error(`Environment variable ${envVar} is not set.`)
+    );
     process.exit(1);
   }
   return process.env[envVar] as string;
@@ -36,11 +39,6 @@ const chainConfig: ChainConfig = {
     ? parseInt(process.env.L2_START_BLOCK)
     : undefined,
 };
-
-export const WORMHOLE_GUARDIAN_API_ENDPOINT = requireEnv('WORMHOLE_GUARDIAN_API_ENDPOINT');
-export const VAA_FETCH_RETRY_DELAY_MS = parseInt(process.env.VAA_FETCH_RETRY_DELAY_MS || '60000');
-export const VAA_FETCH_MAX_RETRIES = parseInt(process.env.VAA_FETCH_MAX_RETRIES || '5');
-export const L1_TX_CONFIRMATION_TIMEOUT_MS = parseInt(process.env.L1_TX_CONFIRMATION_TIMEOUT_MS || '300000');
 
 // Create the appropriate chain handler
 export const chainHandler = ChainHandlerFactory.createHandler(chainConfig);
@@ -136,13 +134,16 @@ export const initializeL2RedemptionService = async () => {
       chainConfig.l1Rpc,
       chainConfig.l1BitcoinRedeemerAddress,
       Number(chainConfig.l2WormholeChainId),
-      chainConfig.l2WormholeGatewayAddress,
+      chainConfig.l2WormholeGatewayAddress
     );
     await l2RedemptionService.initialize();
     l2RedemptionService.startListening();
     LogMessage('L2RedemptionService initialized and started successfully.');
   } catch (error) {
-    LogError('Failed to initialize or start L2RedemptionService:', error as Error);
+    LogError(
+      'Failed to initialize or start L2RedemptionService:',
+      error as Error
+    );
     return false;
   }
   return true;

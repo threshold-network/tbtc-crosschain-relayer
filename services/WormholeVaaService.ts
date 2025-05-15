@@ -14,9 +14,7 @@ import {
 import evmPlatform from "@wormhole-foundation/sdk/platforms/evm";
 import solanaPlatform from "@wormhole-foundation/sdk/platforms/solana";
 
-import { LogMessage, LogError, LogWarning } from '../utils/Logs';
-import { VAA_FETCH_RETRY_DELAY_MS, VAA_FETCH_MAX_RETRIES } from './Core';
-
+import { LogMessage, LogError } from '../utils/Logs';
 
 type SignedVaa = Uint8Array;
 type ParsedVaaWithPayload = VAA<"TokenBridge:Transfer"> | VAA<"TokenBridge:TransferWithPayload">;
@@ -24,9 +22,11 @@ type ParsedVaaWithPayload = VAA<"TokenBridge:Transfer"> | VAA<"TokenBridge:Trans
 const DEFAULT_WORMHOLE_NETWORK: Network = 'Testnet';
 const DEFAULT_SDK_PLATFORMS_MODULES = [evmPlatform, solanaPlatform];
 const MIN_VAA_CONSISTENCY_LEVEL = 1; // How long does the Guardian network need to wait before signing off on a VAA?
+const VAA_FETCH_RETRY_DELAY_MS = parseInt(process.env.VAA_FETCH_RETRY_DELAY_MS || '60000');
+const VAA_FETCH_MAX_RETRIES = parseInt(process.env.VAA_FETCH_MAX_RETRIES || '5');
 const GET_VAA_TIMEOUT_MS = VAA_FETCH_MAX_RETRIES * VAA_FETCH_RETRY_DELAY_MS > 0 ? VAA_FETCH_MAX_RETRIES * VAA_FETCH_RETRY_DELAY_MS : 60000;
+const DEFAULT_TARGET_L1_CHAIN_ID: ChainId = 2; // Ethereum Mainnet
 
-const TARGET_L1_CHAIN_ID: ChainId = 2; // Ethereum Mainnet, TODO: Make this configurable for testing
 
 export class WormholeVaaService {
     private l2Provider: ethers.providers.JsonRpcProvider;
@@ -60,7 +60,8 @@ export class WormholeVaaService {
     public async fetchAndVerifyVaaForL2Event(
         l2TransactionHash: string,
         emitterChainId: ChainId,
-        emitterAddress: string
+        emitterAddress: string,
+        targetL1ChainId: ChainId = DEFAULT_TARGET_L1_CHAIN_ID
     ): Promise<{ vaaBytes: SignedVaa; parsedVaa: ParsedVaaWithPayload } | null> {
         const emitterChainName = chainIdToChain(emitterChainId);
         LogMessage(
@@ -104,7 +105,7 @@ export class WormholeVaaService {
             // TODO: Which discriminator to use? Test it
             const discriminator = "TokenBridge:TransferWithPayload";
             // const discriminator = "TokenBridge:Transfer";
-            
+
             let fetchedParsedVaa: ParsedVaaWithPayload | null = null;
             try {
                 const vaa = await this.wh.getVaa(
@@ -131,7 +132,7 @@ export class WormholeVaaService {
                 return null;
             }
 
-            const targetL1ChainName = chainIdToChain(TARGET_L1_CHAIN_ID);
+            const targetL1ChainName = chainIdToChain(targetL1ChainId);
             const l1ChainContext = this.wh.getChain(targetL1ChainName);
 
             try {
@@ -204,9 +205,11 @@ export class WormholeVaaService {
         }
 
         if (parsedVaa.consistencyLevel < MIN_VAA_CONSISTENCY_LEVEL) {
-            LogWarning(
-                `VAA verification warning: Low consistency level. Expected >= ${MIN_VAA_CONSISTENCY_LEVEL}, Got: ${parsedVaa.consistencyLevel}. VAA Seq: ${parsedVaa.sequence}`
+            LogError(
+                `VAA verification warning: Low consistency level. Expected >= ${MIN_VAA_CONSISTENCY_LEVEL}, Got: ${parsedVaa.consistencyLevel}. VAA Seq: ${parsedVaa.sequence}`,
+                new Error('VAA consistency level too low')
             );
+            return false;
         }
 
         // TODO: What are the other checks we need to do? Using the parsed VAA object?

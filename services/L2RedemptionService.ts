@@ -5,18 +5,18 @@ import { LogMessage, LogError } from '../utils/Logs';
 import { L2BitcoinRedeemerABI } from '../interfaces/L2BitcoinRedeemer';
 import { ChainId } from '@wormhole-foundation/sdk';
 
+export interface BitcoinTxUtxo {
+    txHash: string; // bytes32
+    txOutputIndex: number; // uint32
+    txOutputValue: ethers.BigNumber; // uint64
+}
 
 export interface RedemptionRequestedEventData {
-    walletPubKeyHash: string; // bytes20
-    redeemerOutputScript: string; // bytes
-    redeemer: string; // address
-    requestedAmount: ethers.BigNumber; // uint64
-    treasuryFee: ethers.BigNumber; // uint64
-    txMaxFee: ethers.BigNumber; // uint64, from event
-    l2Identifier: ethers.BigNumber; // uint256, from event
-    // Derived from the event object, not part of event.args typically
-    l2TransactionHash: string;
-    l2BlockNumber: number;
+    walletPubKeyHash: string; // bytes20, from event name 
+    mainUtxo: BitcoinTxUtxo; // struct BitcoinTx.UTXO, from event
+    redeemerOutputScript: string; // bytes, from event
+    amount: ethers.BigNumber; // uint64, from event
+    l2TransactionHash: string; // bytes32, derived from event, used for VAA fetching
 }
 
 export class L2RedemptionService {
@@ -70,28 +70,30 @@ export class L2RedemptionService {
         LogMessage(`Starting to listen for 'RedemptionRequested' events from ${this.l2BitcoinRedeemerContract.address}`);
 
         this.l2BitcoinRedeemerContract.on('RedemptionRequested', async (
-            walletPubKeyHash: string,
-            redeemerOutputScript: string,
-            redeemer: string,
-            requestedAmount: ethers.BigNumber,
-            treasuryFee: ethers.BigNumber,
-            txMaxFee: ethers.BigNumber,
-            l2Identifier: ethers.BigNumber,
-            event: ethers.Event
+            walletPubKeyHash: string,           // event.args[0] - bytes20
+            mainUtxo: BitcoinTxUtxo,            // event.args[1] - struct BitcoinTx.UTXO
+            redeemerOutputScript: string,       // event.args[2] - bytes
+            amount: ethers.BigNumber,           // event.args[3] - uint64
+            rawEvent: ethers.Event              // The full event object from ethers.js
         ) => {
             const eventData: RedemptionRequestedEventData = {
                 walletPubKeyHash,
+                mainUtxo,
                 redeemerOutputScript,
-                redeemer,
-                requestedAmount,
-                treasuryFee,
-                txMaxFee,
-                l2Identifier,
-                l2TransactionHash: event.transactionHash,
-                l2BlockNumber: event.blockNumber,
+                amount,
+                l2TransactionHash: rawEvent.transactionHash,
             };
 
-            LogMessage(`Received RedemptionRequested event. L2 Tx: ${event.transactionHash}, Block: ${event.blockNumber}, Args: ${JSON.stringify(event.args)}`);
+            LogMessage(JSON.stringify({
+                message: "Received RedemptionRequested event",
+                l2TransactionHash: rawEvent.transactionHash,
+                l2BlockNumber: rawEvent.blockNumber,
+                rawArgs: rawEvent.args ? JSON.stringify(rawEvent.args, (key, value) =>
+                    typeof value === 'bigint' ? value.toString() :
+                    ethers.BigNumber.isBigNumber(value) ? value.toString() : value
+                ) : "N/A",
+                parsedEventData: eventData
+            }));
 
             await this.handleRedemptionRequest(eventData);
         });

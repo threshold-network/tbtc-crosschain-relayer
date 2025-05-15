@@ -1,9 +1,9 @@
 import { ethers } from 'ethers';
 import { RedemptionRequestedEventData } from '../services/L2RedemptionService';
 import { LogMessage, LogError } from '../utils/Logs';
-import { L1_TX_CONFIRMATION_TIMEOUT_MS } from '../services/Core';
 import { L1BitcoinRedeemerABI } from '../interfaces/L1BitcoinRedeemer';
 
+const L1_TX_CONFIRMATION_TIMEOUT_MS = parseInt(process.env.L1_TX_CONFIRMATION_TIMEOUT_MS || '300000');
 const GAS_ESTIMATE_MULTIPLIER = 1.2; // Add 20% buffer to gas estimate
 const DEFAULT_L1_CONFIRMATIONS = 1; // Default number of confirmations to wait for
 
@@ -28,39 +28,40 @@ export class L1RedemptionHandler {
     /**
      * Submits data (derived from L2 event and validated by VAA) to the L1BitcoinRedeemer contract 
      * to finalize the redemption.
+     * @param redemptionData - Data derived from L2 event and validated by VAA
+     * @returns true if redemption is successfully finalized on L1, false otherwise
      */
     public async submitRedemptionDataToL1(
-        redemptionData: RedemptionRequestedEventData // This comes from the L2 event listener
+        redemptionData: RedemptionRequestedEventData
     ): Promise<boolean> {
         LogMessage(JSON.stringify({ // Stringify complex object
             message: 'Attempting to finalize L2 redemption on L1',
             l2TransactionHash: redemptionData.l2TransactionHash,
-            l2Identifier: redemptionData.l2Identifier.toString(),
             relayerAddress: this.l1Signer.address,
             l1Contract: this.l1BitcoinRedeemer.address,
             walletPubKeyHash: redemptionData.walletPubKeyHash,
-            requestedAmount: redemptionData.requestedAmount.toString(),
+            mainUtxo: redemptionData.mainUtxo,
+            redeemerOutputScript: redemptionData.redeemerOutputScript,
+            amount: redemptionData.amount.toString(),
         }));
 
         try {
-            // Convert walletPubKeyHash (bytes20 hex string) to bytes32 hex string if necessary
+            // Convert walletPubKeyHash (bytes20 hex string) to bytes32 hex string for L1 contract
             let walletPubKeyHashBytes32 = redemptionData.walletPubKeyHash;
             if (walletPubKeyHashBytes32.startsWith('0x')) {
                 walletPubKeyHashBytes32 = walletPubKeyHashBytes32.substring(2);
             }
+            // Pad to 32 bytes (64 hex characters)
             walletPubKeyHashBytes32 = '0x' + walletPubKeyHashBytes32.padEnd(64, '0');
 
             const args = [
-                ethers.utils.hexZeroPad(redemptionData.l2Identifier.toHexString(), 32),
-                walletPubKeyHashBytes32,
+                walletPubKeyHashBytes32, 
+                redemptionData.mainUtxo,
                 redemptionData.redeemerOutputScript,
-                redemptionData.requestedAmount,
-                redemptionData.treasuryFee,
-                redemptionData.txMaxFee,
-                redemptionData.redeemer
+                redemptionData.amount,
             ];
 
-            LogMessage(`Estimating gas for finalizeL2Redemption with args: ${JSON.stringify(args)}`);
+            LogMessage(`Estimating gas for finalizeL2Redemption with args: ${JSON.stringify(args.map(arg => ethers.BigNumber.isBigNumber(arg) ? arg.toString() : arg))}`);
             const estimatedGas = await this.l1BitcoinRedeemer.estimateGas.finalizeL2Redemption(...args);
             const gasLimit = ethers.BigNumber.from(estimatedGas).mul(ethers.BigNumber.from(Math.round(GAS_ESTIMATE_MULTIPLIER * 100))).div(100);
             LogMessage(`Estimated gas: ${estimatedGas.toString()}, Gas limit with multiplier (${GAS_ESTIMATE_MULTIPLIER}x): ${gasLimit.toString()}`);
@@ -81,8 +82,8 @@ export class L1RedemptionHandler {
             // However, ethers v5 tx.wait() timeout parameter is not for the wait itself but for the provider response per block.
             // For a true overall timeout, we need to race Promise.race([tx.wait(), timeoutPromise])
             LogMessage(`Awaiting L1 transaction confirmation for ${tx.hash}. Confirmations: ${DEFAULT_L1_CONFIRMATIONS}, Timeout: ${L1_TX_CONFIRMATION_TIMEOUT_MS}ms`);
-            
-            const timeoutPromise = new Promise((_, reject) => 
+
+            const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error(`Timeout waiting for L1 transaction ${tx.hash} confirmation after ${L1_TX_CONFIRMATION_TIMEOUT_MS}ms`)), L1_TX_CONFIRMATION_TIMEOUT_MS)
             );
 
@@ -117,9 +118,9 @@ export class L1RedemptionHandler {
                 errorName: err.name,
                 errorMessage: err.message,
                 errorStack: err.stack,
-                errorDetails: error.error, 
-                transaction: error.transaction, 
-                receipt: error.receipt 
+                errorDetails: error.error,
+                transaction: error.transaction,
+                receipt: error.receipt
             }), err);
             return false;
         }
