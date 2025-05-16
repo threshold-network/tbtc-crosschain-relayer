@@ -19,9 +19,10 @@ sequenceDiagram
     participant TBTC as SUI TBTC Token
 
     %% Phase 1: User initiates deposit
-    User->>SDK: Connect SUI wallet
-    SDK->>SuiBD: Calculate deposit address
-    SuiBD-->>SDK: P2(W)SH deposit address
+    User->>SDK: Connect SUI wallet & Initiate Mint
+    SDK->>SDK: Create Deposit object (off-chain)
+    SDK->>SDK: Calculate deposit address (using Deposit obj parameters)
+    SDK-->>User: P2(W)SH deposit address
     User->>BTC: Send BTC to deposit address
     BTC-->>User: Confirms transaction
 
