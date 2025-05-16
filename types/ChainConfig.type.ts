@@ -1,11 +1,30 @@
+export enum NETWORK {
+  MAINNET = 'Mainnet',
+  TESTNET = 'Testnet',
+  DEVNET = 'Devnet',
+}
+
 /**
  * Enum defining different supported chain types
  */
-export enum ChainType {
-  EVM = 'evm',
-  STARKNET = 'starknet',
-  SUI = 'sui',
-  SOLANA = 'solana',
+export enum CHAIN_TYPE {
+  EVM = 'Evm',
+  STARKNET = 'Starknet',
+  SUI = 'Sui',
+  SOLANA = 'Solana',
+}
+
+export enum CHAIN_NAME {
+  SEPOLIA = 'Sepolia',
+  ETHEREUM = 'Ethereum',
+  ARBITRUM = 'Arbitrum',
+  ARBITRUM_SEPOLIA = 'ArbitrumSepolia',
+  BASE = 'Base',
+  BASE_SEPOLIA = 'BaseSepolia',
+  SOLANA = 'Solana',
+  SUI = 'Sui',
+  STARKNET = 'Starknet',
+
 }
 
 /**
@@ -13,7 +32,10 @@ export enum ChainType {
  */
 export interface ChainConfig {
   /** Type of blockchain */
-  chainType: ChainType;
+  chainType: CHAIN_TYPE;
+
+  /** Network type (e.g., Mainnet, Testnet, Devnet) */
+  network: NETWORK;
 
   /** Name of the chain for logging and identification */
   chainName: string;
@@ -23,6 +45,9 @@ export interface ChainConfig {
 
   /** RPC URL for the Layer 2 chain */
   l2Rpc: string;
+
+  /** WebSocket RPC endpoint for the Layer 2 chain */
+  l2WsRpc?: string;
 
   /** Address of the L1BitcoinDepositor contract */
   l1ContractAddress: string;
@@ -44,4 +69,6 @@ export interface ChainConfig {
 
   /** Starting block number for scanning L2 events */
   l2StartBlock?: number;
+
+  solanaSignerKeyBase?: string; // Base64 encoded secret key for Solana
 }

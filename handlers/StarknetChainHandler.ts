@@ -1,4 +1,4 @@
-import { ChainConfig, ChainType } from '../types/ChainConfig.type';
+import { ChainConfig, CHAIN_TYPE } from '../types/ChainConfig.type';
 import { Deposit } from '../types/Deposit.type';
 import { LogError, LogMessage, LogWarning } from '../utils/Logs';
 import { BaseChainHandler } from './BaseChainHandler';
@@ -14,7 +14,7 @@ export class StarknetChainHandler extends BaseChainHandler {
     LogMessage(
       `Constructing StarknetChainHandler for ${this.config.chainName}`
     );
-    if (config.chainType !== ChainType.STARKNET) {
+    if (config.chainType !== CHAIN_TYPE.STARKNET) {
       throw new Error(
         `Incorrect chain type ${config.chainType} provided to StarknetChainHandler.`
       );

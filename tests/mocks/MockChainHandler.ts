@@ -1,9 +1,10 @@
+import { TransactionReceipt } from "@ethersproject/providers"
 import { ChainHandlerInterface } from '../../interfaces/ChainHandler.interface';
 import { DepositStatus } from '../../types/DepositStatus.enum';
 import { Deposit } from '../../types/Deposit.type';
 import { LogMessage } from '../../utils/Logs';
 import { createTestDeposit } from './BlockchainMock';
-import { ethers } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 
 /**
  * Mock chain handler for testing
@@ -111,7 +112,7 @@ export class MockChainHandler implements ChainHandlerInterface {
   /**
    * Initialize a deposit
    */
-  async initializeDeposit(deposit: Deposit): Promise<void> {
+  async initializeDeposit(deposit: Deposit): Promise<TransactionReceipt | undefined> {
     LogMessage(`Mock chain handler: Initializing deposit ${deposit.id}`);
 
     // Simulate processing delay
@@ -144,7 +145,24 @@ export class MockChainHandler implements ChainHandlerInterface {
       this.emitEvent('DepositInitialized', deposit.id);
     }
 
-    return Promise.resolve();
+    return {
+      to: "0x0000000000000000000000000000000000000000",
+      from: "0x0000000000000000000000000000000000000000",
+      contractAddress: "0x0000000000000000000000000000000000000000",
+      transactionIndex: 0,
+      gasUsed: BigNumber.from(21_000),
+      logsBloom: "0x" + "0".repeat(512),
+      blockHash: "0x" + "0".repeat(64),
+      transactionHash: "0x" + "0".repeat(64),
+      logs: [],
+      blockNumber: 1,
+      cumulativeGasUsed: BigNumber.from(21_000),
+      confirmations: 1,
+      effectiveGasPrice: BigNumber.from(1),
+      type: 2,
+      status: 1,
+      byzantium: true
+    };
   }
 
   /**

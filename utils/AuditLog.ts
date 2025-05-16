@@ -16,6 +16,8 @@ export enum AuditEventType {
   DEPOSIT_INITIALIZED = 'DEPOSIT_INITIALIZED',
   DEPOSIT_FINALIZED = 'DEPOSIT_FINALIZED',
   DEPOSIT_DELETED = 'DEPOSIT_DELETED',
+  DEPOSIT_AWAITING_WORMHOLE_VAA = 'DEPOSIT_AWAITING_WORMHOLE_VAA',
+  DEPOSIT_BRIDGED = 'DEPOSIT_BRIDGED',
   ERROR = 'ERROR',
   API_REQUEST = 'API_REQUEST',
 }
@@ -109,6 +111,8 @@ export const logStatusChange = (
     [DepositStatus.QUEUED]: 'QUEUED',
     [DepositStatus.INITIALIZED]: 'INITIALIZED',
     [DepositStatus.FINALIZED]: 'FINALIZED',
+    [DepositStatus.AWAITING_WORMHOLE_VAA]: 'AWAITING_WORMHOLE_VAA',
+    [DepositStatus.BRIDGED]: 'BRIDGED',
   };
 
   appendToAuditLog(AuditEventType.STATUS_CHANGED, deposit.id, {
@@ -234,5 +238,41 @@ export const logDepositError = (
   appendToAuditLog(AuditEventType.ERROR, depositId, {
     message: errorMessage,
     error: errorObj.message || JSON.stringify(errorObj),
+  });
+};
+
+/**
+ * Log deposit finalization
+ * @param deposit The deposit object
+ */
+export const logDepositAwaitingWormholeVAA = (deposit: Deposit): void => {
+  appendToAuditLog(AuditEventType.DEPOSIT_AWAITING_WORMHOLE_VAA, deposit.id, {
+    deposit: {
+      id: deposit.id,
+      fundingTxHash: deposit.fundingTxHash,
+      owner: deposit.owner,
+      l2DepositOwner: deposit.L1OutputEvent?.l2DepositOwner,
+      status: 'AWAITING_WORMHOLE_VAA',
+      awaitingWormholeVAAMessageSince: deposit.dates.awaitingWormholeVAAMessageSince,
+    },
+    txHash: deposit.hashes.eth.finalizeTxHash,
+  });
+};
+
+/**
+ * Log deposit finalization
+ * @param deposit The deposit object
+ */
+export const logDepositBridged = (deposit: Deposit): void => {
+  appendToAuditLog(AuditEventType.DEPOSIT_BRIDGED, deposit.id, {
+    deposit: {
+      id: deposit.id,
+      fundingTxHash: deposit.fundingTxHash,
+      owner: deposit.owner,
+      l2DepositOwner: deposit.L1OutputEvent?.l2DepositOwner,
+      status: 'BRIDGED',
+      bridgedAt: deposit.dates.bridgedAt,
+    },
+    txHash: deposit.hashes.solana.bridgeTxHash,
   });
 };

@@ -1,5 +1,5 @@
 import { ChainHandlerInterface } from '../interfaces/ChainHandler.interface';
-import { ChainConfig, ChainType } from '../types/ChainConfig.type';
+import { ChainConfig, CHAIN_TYPE } from '../types/ChainConfig.type';
 import { EVMChainHandler } from './EVMChainHandler';
 import { LogMessage } from '../utils/Logs';
 
@@ -23,16 +23,16 @@ export class ChainHandlerFactory {
     );
 
     switch (chainConfig.chainType) {
-      case ChainType.EVM:
+      case CHAIN_TYPE.EVM:
         return new EVMChainHandler(chainConfig);
 
-      case ChainType.STARKNET:
+      case CHAIN_TYPE.STARKNET:
         return new StarknetChainHandler(chainConfig);
 
-      case ChainType.SUI:
+      case CHAIN_TYPE.SUI:
         return new SuiChainHandler(chainConfig);
 
-      case ChainType.SOLANA:
+      case CHAIN_TYPE.SOLANA:
         return new SolanaChainHandler(chainConfig);
 
       default:

@@ -111,3 +111,49 @@ export const cleanFinalizedDeposits = async (): Promise<void> => {
     }
   });
 };
+
+/**
+ * @name cleanBridgedDeposits
+ * @description Cleans up the deposits that have been in the BRIDGED state for more than 12 hours.
+ * @returns {Promise<void>} A promise that resolves when the old awaiting vaa deposits are deleted.
+ */
+
+const REMOVE_BRIDGED_TIME_MS: number =
+  parseInt(process.env.CLEAN_BRIDGED_TIME || '12', 10) * 60 * 60 * 1000;
+
+export const cleanBridgedDeposits = async (): Promise<void> => {
+  const operations: Deposit[] = await getAllJsonOperationsByStatus(
+    DepositStatus.BRIDGED
+  );
+  const currentTime = Date.now();
+
+  // Filter and delete deposits in a single pass, checking that finalizationAt exists
+  operations.forEach(({ id, dates }) => {
+    const bridgedAt = dates?.bridgedAt
+      ? new Date(dates.bridgedAt).getTime()
+      : null;
+    if (!bridgedAt) return;
+
+    const ageInMs = currentTime - bridgedAt;
+
+    if (ageInMs > REMOVE_BRIDGED_TIME_MS) {
+      const ageInHours = (ageInMs / (60 * 60 * 1000)).toFixed(2);
+
+      LogMessage(
+        `Deleting BRIDGED ID: ${id} | Bridged at: ${bridgedAt} | Age: ${ageInHours} hours`
+      );
+
+      // Get full deposit to log it before deletion
+      const deposit = getJsonById(id);
+      if (deposit) {
+        // Log the deletion to the audit log
+        logDepositDeleted(
+          deposit,
+          `BRIDGED deposit exceeded age limit (${ageInHours} hours)`
+        );
+      }
+
+      deleteJson(id);
+    }
+  });
+};

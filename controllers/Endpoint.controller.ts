@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
 import { ChainHandlerInterface } from '../interfaces/ChainHandler.interface';
-import { createDeposit } from '../utils/Deposits';
-import { LogError, LogMessage } from '../utils/Logs';
+import { createDeposit, getDepositId } from '../utils/Deposits';
+import { LogError, LogMessage, LogWarning } from '../utils/Logs';
 import { logApiRequest, logDepositError } from '../utils/AuditLog';
 import { DepositStatus } from '../types/DepositStatus.enum';
+import { getJsonById } from '../utils/JsonUtils';
+import { getFundingTxHash } from '../utils/GetTransactionHash';
 
 /**
  * Controller for handling deposits via HTTP endpoints for chains without L2 contract listeners
@@ -50,6 +52,20 @@ export class EndpointController {
         return;
       }
 
+      const fundingTxHash = getFundingTxHash(fundingTx);
+      const depositId = getDepositId(fundingTxHash, reveal.fundingOutputIndex);
+      LogMessage(
+        `Received L2 DepositInitialized event | ID: ${depositId} | Owner: ${l2DepositOwner}`
+      );
+
+      const existingDeposit = getJsonById(depositId);
+      if (existingDeposit) {
+        LogWarning(
+          `L2 Listener | Deposit already exists locally | ID: ${depositId}. Ignoring event.`
+        );
+        return;
+      }
+
       // Create deposit object
       const deposit = createDeposit(
         fundingTx,
@@ -60,13 +76,14 @@ export class EndpointController {
       LogMessage(`Created deposit with ID: ${deposit.id}`);
 
       // Initialize the deposit
-      await this.chainHandler.initializeDeposit(deposit);
+      const transactionReceipt = await this.chainHandler.initializeDeposit(deposit);
 
       // Return success
       res.status(200).json({
         success: true,
         depositId: deposit.id,
         message: 'Deposit initialized successfully',
+        receipt: transactionReceipt,
       });
     } catch (error: any) {
       LogError('Error handling reveal endpoint:', error);

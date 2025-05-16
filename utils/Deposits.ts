@@ -11,7 +11,10 @@ import {
   logStatusChange,
   logDepositInitialized,
   logDepositFinalized,
+  logDepositAwaitingWormholeVAA,
+  logDepositBridged,
 } from './AuditLog';
+import { Reveal } from '../types/Reveal.type';
 // --- End Import ---
 
 /**
@@ -35,12 +38,13 @@ export const createDeposit = (
   l2DepositOwner: any,
   l2Sender: any
 ): Deposit => {
+  const revealArray = Array.isArray(reveal) ? reveal : Object.values(reveal) as Reveal;
   const fundingTxHash = getFundingTxHash(fundingTx);
-  const depositId = getDepositId(fundingTxHash, reveal[0]);
+  const depositId = getDepositId(fundingTxHash, revealArray[0]);
   const deposit: Deposit = {
     id: depositId,
     fundingTxHash: fundingTxHash,
-    outputIndex: reveal[0],
+    outputIndex: revealArray[0],
     hashes: {
       btc: {
         btcTxHash: getTransactionHash(fundingTx),
@@ -49,14 +53,17 @@ export const createDeposit = (
         initializeTxHash: null,
         finalizeTxHash: null,
       },
+      solana: {
+        bridgeTxHash: null,
+      },
     },
     receipt: {
       depositor: l2Sender,
-      blindingFactor: reveal[1],
-      walletPublicKeyHash: reveal[2],
-      refundPublicKeyHash: reveal[3],
-      refundLocktime: reveal[4],
-      extraData: reveal[5],
+      blindingFactor: revealArray[1],
+      walletPublicKeyHash: revealArray[2],
+      refundPublicKeyHash: revealArray[3],
+      refundLocktime: revealArray[4],
+      extraData: l2DepositOwner,
     },
     L1OutputEvent: {
       fundingTx: {
@@ -76,6 +83,13 @@ export const createDeposit = (
       initializationAt: null,
       finalizationAt: null,
       lastActivityAt: new Date().getTime(),
+      awaitingWormholeVAAMessageSince: null,
+      bridgedAt: null,
+    },
+    wormholeInfo: {
+      txHash: null,
+      transferSequence: null,
+      bridgingAttempted: false,
     },
     error: null,
   };
@@ -199,6 +213,125 @@ export const updateToInitializedDeposit = async (
     // --- End Log ---
   }
   // Note: No specific log if only error was updated
+};
+
+/**
+ * @name updateToAwaitingWormholeVAA
+ * @description Updates the status of a deposit to `AWAITING_WORMHOLE_VAA` and
+ * stores the Wormhole transfer sequence (so we can fetch the VAA later).
+ * 
+ * - Sets deposit status to AWAITING_WORMHOLE_VAA
+ * - Records lastActivityAt
+ * - Clears error
+ * - Updates or creates `wormholeInfo.transferSequence`
+ * - Writes the updated deposit object to JSON storage
+ *
+ * @param deposit The deposit object to update
+ * @param transferSequence The Wormhole transfer sequence ID
+ * @param bridgingAttempted Whether bridging was already attempted (default: false)
+ */
+export const updateToAwaitingWormholeVAA = async (
+  txHash: string,
+  deposit: Deposit,
+  transferSequence: string,
+  bridgingAttempted: boolean = false,
+): Promise<void> => {
+  const oldStatus = deposit.status;
+  const newStatus = DepositStatus.AWAITING_WORMHOLE_VAA;
+
+  // Update (or create) wormholeInfo
+  const newWormholeInfo = {
+    ...deposit.wormholeInfo,
+    txHash,
+    transferSequence,
+    bridgingAttempted,
+  };
+
+  const updatedDeposit: Deposit = {
+    ...deposit,
+    status: newStatus,
+    wormholeInfo: newWormholeInfo,
+    error: null, // clear any previous error
+    dates: {
+      ...deposit.dates,
+      lastActivityAt: Date.now(),
+      awaitingWormholeVAAMessageSince: Date.now(),
+    },
+  };
+
+  // Log status change if it actually changed
+  if (newStatus !== oldStatus) {
+    logStatusChange(updatedDeposit, newStatus, oldStatus);
+  }
+
+  // Write to JSON file
+  writeJson(updatedDeposit, deposit.id);
+
+  LogMessage(
+    `Deposit has been moved to AWAITING_WORMHOLE_VAA | ID: ${deposit.id} | sequence: ${transferSequence}`
+  );
+
+  logDepositAwaitingWormholeVAA(updatedDeposit);
+};
+
+/**
+ * @name updateToBridgedDeposit
+ * @description Updates the status of a deposit to `BRIDGED`
+ * 
+ * - Sets deposit status to BRIDGED
+ * - Records lastActivityAt
+ * - Clears error
+ * - Updates or creates `wormholeInfo.transferSequence`
+ * - Writes the updated deposit object to JSON storage
+ *
+ * @param deposit The deposit object to update
+ * @param transferSequence The Wormhole transfer sequence ID
+ * @param bridgingAttempted Whether bridging was already attempted (default: false)
+ */
+export const updateToBridgedDeposit = async (
+  deposit: Deposit,
+  txSignature: string,
+): Promise<void> => {
+  const oldStatus = deposit.status;
+  const newStatus = DepositStatus.BRIDGED;
+
+  const newSolanaHashes = {
+    ...deposit.hashes?.solana,
+    bridgeTxHash: txSignature,
+  };
+
+  const updatedDeposit: Deposit = {
+    ...deposit,
+    status: newStatus,
+    wormholeInfo: {
+      ...deposit.wormholeInfo,
+      bridgingAttempted: true,
+    },
+    hashes: {
+      ...deposit.hashes,
+      solana: newSolanaHashes,
+    },
+    error: null, // clear any previous error
+    dates: {
+      ...deposit.dates,
+      lastActivityAt: Date.now(),
+      bridgedAt: Date.now(),
+    },
+  };
+
+  // Log status change if it actually changed
+  if (newStatus !== oldStatus) {
+    logStatusChange(updatedDeposit, newStatus, oldStatus);
+  }
+
+  // Write to JSON file
+  writeJson(updatedDeposit, deposit.id);
+
+  LogMessage(
+    `Deposit has been moved to BRIDGED | ID: ${deposit.id}`
+  );
+
+  logDepositBridged(updatedDeposit);
 };
 
 /**

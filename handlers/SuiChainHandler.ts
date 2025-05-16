@@ -1,4 +1,4 @@
-import { ChainConfig, ChainType } from '../types/ChainConfig.type';
+import { ChainConfig, CHAIN_TYPE } from '../types/ChainConfig.type';
 import { Deposit } from '../types/Deposit.type';
 import { LogError, LogMessage, LogWarning } from '../utils/Logs';
 import { BaseChainHandler } from './BaseChainHandler';
@@ -12,7 +12,7 @@ export class SuiChainHandler extends BaseChainHandler {
   constructor(config: ChainConfig) {
     super(config);
     LogMessage(`Constructing SuiChainHandler for ${this.config.chainName}`);
-    if (config.chainType !== ChainType.SUI) {
+    if (config.chainType !== CHAIN_TYPE.SUI) {
       throw new Error(
         `Incorrect chain type ${config.chainType} provided to SuiChainHandler.`
       );

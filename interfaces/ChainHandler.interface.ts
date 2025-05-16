@@ -1,3 +1,5 @@
+import { ethers } from 'ethers';
+import { TransactionReceipt } from "@ethersproject/providers"
 import { Deposit } from '../types/Deposit.type';
 import { DepositStatus } from '../types/DepositStatus.enum';
 
@@ -20,13 +22,13 @@ export interface ChainHandlerInterface {
    * Initialize a deposit on the L1 chain
    * @param deposit The deposit to initialize
    */
-  initializeDeposit(deposit: Deposit): Promise<void>;
+  initializeDeposit(deposit: Deposit): Promise<TransactionReceipt | undefined>;
 
   /**
    * Finalize a deposit on the L1 chain
    * @param deposit The deposit to finalize
    */
-  finalizeDeposit(deposit: Deposit): Promise<void>;
+  finalizeDeposit(deposit: Deposit): Promise<void | { receipt: ethers.ContractReceipt | null; }>;
 
   /**
    * Check the status of a deposit on the chain.
@@ -66,4 +68,11 @@ export interface ChainHandlerInterface {
    * @returns {boolean} True if past deposit checking is supported, false otherwise.
    */
   supportsPastDepositCheck(): boolean;
+
+  /**
+   * Process all deposits that are in the AWAITING_WORMHOLE_VAA status.
+   * This function will attempt to bridge the deposits using the Wormhole protocol.
+   * @returns {Promise<void>} A promise that resolves when the bridging process is complete.
+   */
+  processWormholeBridging?(): Promise<void>;
 }
