@@ -6,6 +6,8 @@ import { ChainHandlerFactory } from '../handlers/ChainHandlerFactory.js';
 import { ChainConfig, ChainType } from '../types/ChainConfig.type.js';
 import { cleanQueuedDeposits, cleanFinalizedDeposits } from './CleanupDeposits.js';
 import { L2RedemptionService } from './L2RedemptionService.js';
+import { RedemptionStore } from '../utils/RedemptionStore.js';
+import { RedemptionStatus } from '../types/Redemption.type.js';
 
 // ---------------------------------------------------------------
 // Environment Variables and Configuration
@@ -14,7 +16,7 @@ const requireEnv = (envVar: string) => {
   if (!process.env[envVar]) {
     logErrorContext(
       `Environment variable ${envVar} is not set.`,
-      new Error(`Environment variable ${envVar} is not set.`)
+      new Error(`Environment variable ${envVar} is not set.`),
     );
     process.exit(1);
   }
@@ -31,14 +33,12 @@ const chainConfig: ChainConfig = {
   l2ContractAddress: requireEnv('L2_BITCOIN_DEPOSITOR'),
   l2BitcoinRedeemerAddress: requireEnv('L2_BITCOIN_REDEEMER_ADDRESS'),
   l2WormholeGatewayAddress: requireEnv('L2_WORMHOLE_GATEWAY_ADDRESS'),
-  l2WormholeChainId: requireEnv('L2_WORMHOLE_CHAIN_ID'),
+  l2WormholeChainId: parseInt(requireEnv('L2_WORMHOLE_CHAIN_ID')),
   vaultAddress: requireEnv('TBTCVault'),
   privateKey: requireEnv('PRIVATE_KEY'),
   useEndpoint: process.env.USE_ENDPOINT === 'true',
   endpointUrl: process.env.ENDPOINT_URL,
-  l2StartBlock: process.env.L2_START_BLOCK
-    ? parseInt(process.env.L2_START_BLOCK)
-    : undefined,
+  l2StartBlock: process.env.L2_START_BLOCK ? parseInt(process.env.L2_START_BLOCK) : undefined,
 };
 
 // Create the appropriate chain handler
@@ -47,6 +47,8 @@ export const chainHandler = ChainHandlerFactory.createHandler(chainConfig);
 // ---------------------------------------------------------------
 // Cron Jobs
 // ---------------------------------------------------------------
+
+let l2RedemptionServiceSingleton: L2RedemptionService | null = null;
 
 /**
  * @name startCronJobs
@@ -66,27 +68,53 @@ export const startCronJobs = () => {
     }
   });
 
+  // Every 2 minutes - process redemptions
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      if (!l2RedemptionServiceSingleton) {
+        l2RedemptionServiceSingleton = new L2RedemptionService(
+          chainConfig.l2Rpc,
+          chainConfig.l2BitcoinRedeemerAddress,
+          chainConfig.privateKey,
+          chainConfig.l1Rpc,
+          chainConfig.l1BitcoinRedeemerAddress,
+          chainConfig.l2WormholeChainId,
+          chainConfig.l2WormholeGatewayAddress,
+        );
+        await l2RedemptionServiceSingleton.initialize();
+      }
+      await L2RedemptionService.processPendingRedemptions(
+        l2RedemptionServiceSingleton['wormholeVaaService'],
+        chainConfig.l2WormholeChainId,
+        chainConfig.l2WormholeGatewayAddress,
+      );
+      await L2RedemptionService.processVaaFetchedRedemptions(
+        l2RedemptionServiceSingleton['l1RedemptionHandler'],
+      );
+    } catch (error) {
+      logErrorContext('Error in redemption processing cron job:', error);
+    }
+  });
+
   // Every 5 minutes - check for past deposits
   cron.schedule('*/5 * * * *', async () => {
     try {
       if (chainHandler.supportsPastDepositCheck()) {
         const latestBlock = await chainHandler.getLatestBlock();
         if (latestBlock > 0) {
-          logger.debug(
-            `Running checkForPastDeposits (Latest Block/Slot: ${latestBlock})`
-          );
+          logger.debug(`Running checkForPastDeposits (Latest Block/Slot: ${latestBlock})`);
           await chainHandler.checkForPastDeposits({
             pastTimeInMinutes: 5,
             latestBlock: latestBlock,
           });
         } else {
           logger.warn(
-            `Skipping checkForPastDeposits - Invalid latestBlock received: ${latestBlock}`
+            `Skipping checkForPastDeposits - Invalid latestBlock received: ${latestBlock}`,
           );
         }
       } else {
         logger.debug(
-          'Skipping checkForPastDeposits - Handler does not support it (e.g., using endpoint).'
+          'Skipping checkForPastDeposits - Handler does not support it (e.g., using endpoint).',
         );
       }
     } catch (error) {
@@ -104,6 +132,28 @@ export const startCronJobs = () => {
     }
   });
 
+  // Every 60 minutes - cleanup old redemptions
+  cron.schedule('*/60 * * * *', async () => {
+    try {
+      const now = Date.now();
+      const retentionMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+      const allRedemptions = await RedemptionStore.getAll();
+      for (const redemption of allRedemptions) {
+        if (
+          (redemption.status === RedemptionStatus.COMPLETED ||
+            redemption.status === RedemptionStatus.FAILED) &&
+          redemption.dates.completedAt &&
+          now - redemption.dates.completedAt > retentionMs
+        ) {
+          await RedemptionStore.delete(redemption.id);
+          logger.info(`Cleaned up redemption ${redemption.id} (status: ${redemption.status})`);
+        }
+      }
+    } catch (error) {
+      logErrorContext('Error in redemption cleanup cron job:', error);
+    }
+  });
+
   logger.debug('Cron job setup complete.');
 };
 
@@ -115,9 +165,7 @@ export const initializeChain = async () => {
   try {
     await chainHandler.initialize();
     await chainHandler.setupListeners();
-    logger.debug(
-      `Deposit chain handler for ${chainConfig.chainName} successfully initialized`
-    );
+    logger.debug(`Deposit chain handler for ${chainConfig.chainName} successfully initialized`);
   } catch (error) {
     logErrorContext('Failed to initialize deposit chain handler:', error);
     return false;
@@ -134,17 +182,14 @@ export const initializeL2RedemptionService = async () => {
       chainConfig.privateKey,
       chainConfig.l1Rpc,
       chainConfig.l1BitcoinRedeemerAddress,
-      Number(chainConfig.l2WormholeChainId),
-      chainConfig.l2WormholeGatewayAddress
+      chainConfig.l2WormholeChainId,
+      chainConfig.l2WormholeGatewayAddress,
     );
     await l2RedemptionService.initialize();
     l2RedemptionService.startListening();
     logger.info('L2RedemptionService initialized and started successfully.');
   } catch (error) {
-    logErrorContext(
-      'Failed to initialize or start L2RedemptionService:',
-      error as Error
-    );
+    logErrorContext('Failed to initialize or start L2RedemptionService:', error as Error);
     return false;
   }
   return true;

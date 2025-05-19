@@ -40,7 +40,7 @@ export interface ChainConfig {
   l2WormholeGatewayAddress: string;
 
   /** Wormhole Chain ID for the L2 network */
-  l2WormholeChainId: number | string;
+  l2WormholeChainId: number;
 
   /** Address of the TBTCVault contract */
   vaultAddress: string;
