@@ -5,4 +5,6 @@ export enum DepositStatus {
   QUEUED = 0,
   INITIALIZED = 1,
   FINALIZED = 2,
+  AWAITING_WORMHOLE_VAA = 3,
+  BRIDGED = 4,
 }

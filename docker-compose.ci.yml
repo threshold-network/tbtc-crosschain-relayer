@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tbtc_relayer
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tbtc_relayer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tbtc-relayer-dev:
+    env_file:
+      - .env
+      - env.test.base
+    environment:
+      NODE_ENV: development
+      APP_NAME: "tBTC Relayer (CI)"
+      APP_VERSION: "1.0.0-ci"
+      VERBOSE_APP: "true"
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/tbtc_relayer
+      CORS_URL: "*"
+
+    ports:
+      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
+
+    build:
+      target: app
+    command: ["node", "dist/index.js"]
+    # Removed command override - use entrypoint script that runs migrations
+    volumes: []
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "--connect-timeout",
+          "3",
+          "--max-time",
+          "5",
+          "http://localhost:${APP_PORT:-8080}/status",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 180s

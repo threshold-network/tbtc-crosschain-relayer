@@ -1,5 +1,5 @@
-import { Response } from 'express';
-import { ResponseJson } from '../types/ResponseJson.type';
+import type { Response } from 'express';
+import type { ResponseJson } from '../types/ResponseJson.type.js';
 
 /**
  * @class CustomResponse
@@ -34,15 +34,15 @@ export class CustomResponse {
     this.res.status(400).send(this.responseJson);
   }
 
-  ok(message?: string, data?: any): void {
+  ok<T = unknown>(message?: string, data?: T): void {
     this.responseJson.error = false;
-    this.responseJson.message = message || 'Operation succesful';
+    this.responseJson.message = message || 'Operation successful';
     this.responseJson.data = data !== undefined ? data : null;
 
     this.res.status(200).send(this.responseJson);
   }
 
-  custom(codeStatus: number, message: string, err: any): void {
+  custom(codeStatus: number, message: string, err: unknown): void {
     this.responseJson.error = true;
     this.responseJson.message = message;
     this.responseJson.data = err;

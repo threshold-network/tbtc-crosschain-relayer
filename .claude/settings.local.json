@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git rm:*)",
+      "Bash(yarn build)",
+      "Bash(yarn test)",
+      "Bash(yarn test:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(docker exec:*)",
+      "Bash(yarn run:*)",
+      "Bash(yarn fix)",
+      "Bash(yarn lint:*)",
+      "Bash(npx jest:*)",
+      "Bash(gh api:*)",
+      "mcp__mcp-sequentialthinking-tools__sequentialthinking_tools",
+      "Bash(npx tsc:*)",
+      "Bash(yarn tsc:*)",
+      "Bash(yarn validate-config:*)",
+      "Bash(mv:*)",
+      "Bash(echo:*)",
+      "Bash(yarn install)",
+      "Bash(yarn format:fix)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": [
+      "Bash(git push:*--force*)",
+      "Bash(git push:*--mirror*)",
+      "Bash(git push:*--delete*)",
+      "Bash(git push:-f)",
+      "Bash(git push:-f *)",
+      "Bash(git push:* -f)",
+      "Bash(git push:* -f *)"
+    ]
+  },
+  "enableAllProjectMcpServers": false
+}

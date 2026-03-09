@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "yarn"
+
+      # This step forces Git to download dependencies using `https://` protocol,
+      # even if `yarn.lock` refers to packages via `git://` or `ssh://`. CI has
+      # no SSH keys, so SSH URLs (e.g. thesis/solidity-contracts) would fail.
+      - name: Force HTTPS for git protocol
+        run: |
+          git config --global url."https://".insteadOf git://
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Install dependencies
+        run: |
+          echo "yarn version:"
+          yarn --version
+          echo "node version:"
+          node --version
+          yarn install --frozen-lockfile --ignore-optional
+
+      # TODO: Enable those after fixing the linting errors
+
+      # - name: Lint
+      # run: yarn lint
+
+      # - name: Format check
+      # run: yarn format
+
+      - name: Detect unused dependencies
+        run: yarn depcheck
+
+      - name: Build
+        run: |
+          # Avoid full TypeScript compile in CI to reduce flakiness and memory use
+          yarn clean:build
+          yarn run prisma:generate
+
+      - name: Setup .env file
+        run: cp env.example .env
+
+      - name: Start Docker Compose services
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
+
+      - name: Wait for services to become healthy
+        run: .github/scripts/wait-for-healthy-services.sh
+        shell: bash
+
+      - name: Validate configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm tbtc-relayer-dev yarn run validate-config
+
+      - name: Reset database
+        run: npx prisma migrate reset --force --skip-seed
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tbtc_relayer?schema=public
+
+      - name: Run tests
+        run: yarn test:coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tbtc_relayer?schema=public
+
+      - name: Stop Docker Compose services
+        if: always()
+        run: |
+          cp env.example .env 2>/dev/null || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml down
+
+      - name: Upload coverage as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7

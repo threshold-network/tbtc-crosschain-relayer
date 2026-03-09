@@ -1,0 +1,65 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * 0" # Run weekly on Sundays
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: "yarn"
+
+      # This step forces Git to download dependencies using `https://` protocol,
+      # even if `yarn.lock` refers to packages via `git://` or `ssh://`. CI has
+      # no SSH keys, so SSH URLs (e.g. thesis/solidity-contracts) would fail.
+      - name: Force HTTPS for git protocol
+        run: |
+          git config --global url."https://".insteadOf git://
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-optional
+
+      - name: Configure registry for npm and yarn
+        run: |
+          npm config set registry https://registry.npmjs.org/
+          yarn config set registry https://registry.npmjs.org/
+
+      - name: Run audit-ci (high severity, prod deps) with retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUDIT_CMD="npx --yes audit-ci --config .audit-ci.json"
+          for attempt in 1 2 3; do
+            echo "Running: $AUDIT_CMD (attempt $attempt)..."
+            if eval "$AUDIT_CMD"; then
+              exit 0
+            fi
+            echo "audit-ci failed (attempt $attempt). Retrying in 10s..."
+            sleep 10
+          done
+          echo "audit-ci failed after 3 attempts."
+          exit 1
+
+      - name: CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript, typescript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3

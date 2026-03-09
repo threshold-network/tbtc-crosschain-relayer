@@ -1,133 +1,241 @@
 // -------------------------------------------------------------------------
 // |                              IMPORTS                                  |
 // -------------------------------------------------------------------------
+import 'dotenv/config';
+import { shutdownOtel } from './instrumentation.js';
+
 // Express Server
-import express, { Express, Request, Response } from 'express';
+import express from 'express';
+import type { Express, RequestHandler } from 'express';
+import type { Server } from 'http';
 
 // Security
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 // Compression
 import compression from 'compression';
 
 // Rutas
-import Routes from './routes/Routes';
+import Routes from './routes/Routes.js';
 
 // Utils
-import { LogMessage, LogError, LogWarning } from './utils/Logs';
-import { initializeChain } from './services/Core';
-import { initializeAuditLog } from './utils/AuditLog';
+import logger from './utils/Logger.js';
+import {
+  initializeAllChains,
+  initializeAllL2RedemptionServices,
+  runStartupTasks,
+  startCronJobs,
+} from './services/Core.js';
+import { logErrorContext } from './utils/Logger.js';
+
+import { chainConfigs } from './config/index.js';
+import { appConfig } from './config/app.config.js';
+import { NodeEnv } from './config/schemas/app.schema.js';
+import { prisma } from './utils/prisma.js';
 
 // -------------------------------------------------------------------------
-// |                            APP CONFIG                                 |
+// |                            APP INSTANCE                               |
 // -------------------------------------------------------------------------
-// Express app
 const app: Express = express();
 
-// Port
-const PORT = process.env.APP_PORT || 3000;
-app.set('port', PORT);
+/** HTTP server reference for graceful shutdown. */
+let server: Server | null = null;
 
 // -------------------------------------------------------------------------
-// |                              SECURITY                                 |
+// |                        EXTRACTED SETUP FUNCTIONS                      |
 // -------------------------------------------------------------------------
-
-if (process.env.CORS_ENABLED === 'true') {
-  app.use(
-    cors({
+function setupMiddleware(app: Express) {
+  if (appConfig.CORS_ENABLED) {
+    const corsOptions = {
       credentials: true,
-      origin: process.env.CORS_URL,
-    })
-  );
-}
-// Helmet (Security middleware)
-app.use(helmet());
+      origin: appConfig.CORS_URL === '*' ? '*' : appConfig.CORS_URL,
+    };
+    app.use(cors(corsOptions));
+    logger.info(`CORS enabled for origin: ${appConfig.CORS_URL || '*'}`);
+  }
 
-// Deshabilitar la cabecera X-Powered-By
-app.disable('x-powered-by');
+  app.use(helmet());
+  app.disable('x-powered-by');
+  app.use(compression() as unknown as RequestHandler);
+  app.use(express.json({ limit: '8mb' }));
+  app.use(express.urlencoded({ limit: '8mb', extended: true }));
 
-// -------------------------------------------------------------------------
-// |                              COMPRESSION                              |
-// -------------------------------------------------------------------------
-
-// Compresion
-app.use(compression as any);
-
-// File Upload limit
-app.use(express.json({ limit: '2048mb' }));
-app.use(express.urlencoded({ limit: '2048mb', extended: true }));
-
-// -------------------------------------------------------------------------
-// |                                 ROUTES                                |
-// -------------------------------------------------------------------------
-
-app.use(Routes);
-
-// -------------------------------------------------------------------------
-// |                              SERVER START                             |
-// -------------------------------------------------------------------------
-
-// --- Add Log ---
-LogMessage('Application starting...');
-
-// Initialize Audit Log System
-try {
-  initializeAuditLog();
-  LogMessage('Audit log initialized.');
-} catch (error: any) {
-  LogError('Failed to initialize audit log:', error);
-  process.exit(1); // Exit if audit log fails
+  // Apply rate limiting
+  const limiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 1000, // Limit each IP to 1000 requests per `window` (here, per 5 minutes)
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: 'Too many requests from this IP, please try again after 5 minutes',
+  });
+  app.use(limiter);
+  logger.info('Rate limiting middleware applied globally.');
 }
 
-// Initialize chain handler
-let chainInitializationSuccess = false;
-(async () => {
+function setupRoutes(app: Express) {
+  app.use(Routes);
+}
+
+async function initializeBackgroundServices() {
+  logger.info('Attempting to initialize all chain handlers...');
+  await initializeAllChains();
+
+  logger.info('Attempting to initialize all L2 redemption listeners...');
+  await initializeAllL2RedemptionServices();
+  logger.info('All L2 redemption listeners initialized successfully.');
+
+  logger.info('Starting cron jobs...');
+  startCronJobs();
+  logger.info('Cron jobs started.');
+
+  logger.info('Running startup tasks to check for past deposits...');
+  await runStartupTasks();
+  logger.info('Startup tasks completed.');
+}
+
+// -------------------------------------------------------------------------
+// |                          MAIN ASYNC FUNCTION                          |
+// -------------------------------------------------------------------------
+const main = async () => {
+  logger.info('Application starting...');
+
   try {
-    LogMessage('Attempting to initialize chain handler...');
-    await initializeChain();
-    chainInitializationSuccess = true;
-    LogMessage('Chain handler initialized successfully.');
-
-    // Start Cron Jobs only if chain initialization was successful
-    const { startCronJobs } = await import('./services/Core');
-    startCronJobs();
-    LogMessage('Cron jobs started.');
-  } catch (error: any) {
-    LogError(
-      'FATAL: Failed to initialize chain handler or dependent services:',
-      error
+    logger.info(
+      `App Name: ${appConfig.APP_NAME}, Version: ${appConfig.APP_VERSION}, Env: ${appConfig.NODE_ENV}`,
     );
-    // Decide if the app should exit or run in a degraded state
-    // process.exit(1); // Option: Exit if chain handler is critical
-    LogWarning(
-      'Running without active chain handler or cron jobs due to initialization error.'
+    app.set('port', appConfig.APP_PORT);
+
+    const numLoadedChains = Object.keys(chainConfigs).length;
+    if (
+      numLoadedChains === 0 &&
+      (appConfig.NODE_ENV as NodeEnv) !== NodeEnv.TEST &&
+      !appConfig.API_ONLY_MODE
+    ) {
+      logger.error('No chain configurations detected');
+      process.exit(1);
+    }
+    logger.info(
+      `Loaded ${numLoadedChains} chain configurations via Zod: ${Object.keys(chainConfigs).join(', ')}`,
+    );
+
+    if (appConfig.VERBOSE_APP) {
+      Object.entries(chainConfigs).forEach(([key, cc]) => {
+        logger.debug(`Chain Config [${key}]:`, JSON.stringify(cc, null, 2));
+      });
+    }
+  } catch (error) {
+    logErrorContext('FATAL: Failed during initial setup after config loading:', error);
+    if ((appConfig.NODE_ENV as NodeEnv) !== NodeEnv.TEST) {
+      process.exit(1);
+    }
+    // If in test mode, rethrow the error so test frameworks can catch it
+    throw error;
+  }
+
+  // -------------------------------------------------------------------------
+  // |                         MIDDLEWARE SETUP                            |
+  // -------------------------------------------------------------------------
+  setupMiddleware(app);
+
+  // -------------------------------------------------------------------------
+  // |                                 ROUTES                                |
+  // -------------------------------------------------------------------------
+  setupRoutes(app);
+
+  // -------------------------------------------------------------------------
+  // |                        BACKGROUND SERVICES                          |
+  // -------------------------------------------------------------------------
+  if (appConfig.API_ONLY_MODE || appConfig.NODE_ENV === 'test') {
+    logger.warn(
+      'Application running in API_ONLY_MODE or test environment. Background services (chain handlers, cron jobs) will not be initialized.',
+    );
+
+    // However, if USE_ENDPOINT is true, we still need to initialize chain handlers for the API endpoints
+    if (process.env.USE_ENDPOINT === 'true') {
+      try {
+        logger.info(
+          'USE_ENDPOINT is true - initializing chain handlers for endpoint API support...',
+        );
+        await initializeAllChains();
+        logger.info('Chain handlers initialized for endpoint mode.');
+      } catch (error: any) {
+        logErrorContext('FATAL: Failed to initialize chain handlers for endpoint mode:', error);
+        if (appConfig.NODE_ENV !== 'test') {
+          process.exit(1);
+        }
+        throw new Error(`Endpoint mode initialization failed in test mode: ${error.message}`);
+      }
+    }
+  } else {
+    try {
+      await initializeBackgroundServices();
+    } catch (error: any) {
+      logErrorContext('FATAL: Failed to initialize chain handlers or dependent services:', error);
+      if ((appConfig.NODE_ENV as NodeEnv) !== NodeEnv.TEST) {
+        process.exit(1);
+      } else {
+        throw new Error(`Initialization failed in test mode: ${error.message}`);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // |                              SERVER START                             |
+  // -------------------------------------------------------------------------
+  if ((appConfig.NODE_ENV as NodeEnv) !== NodeEnv.TEST) {
+    server = app.listen({ port: appConfig.APP_PORT, host: '0.0.0.0' }, () => {
+      logger.info(`Server listening on port ${appConfig.APP_PORT}`);
+    });
+    setupGracefulShutdown();
+  } else {
+    logger.info(
+      'Server startup tasks are skipped in the test environment. Server has already started successfully.',
     );
   }
 
-  // Start the server regardless of chain init success? Or only if successful?
-  // Let's start it anyway to provide basic API status, but log a warning.
+  logger.info('Application initialization sequence complete.');
+};
 
-  // --- Add Log ---
-  LogMessage(`Attempting to start server on port ${PORT}...`);
+/** Coordinated shutdown: stop server, disconnect Prisma, flush OTel, then exit. */
+function setupGracefulShutdown(): void {
+  let shuttingDown = false;
 
-  app
-    .listen(PORT, () => {
-      // --- Add Log ---
-      LogMessage(`Server is running on port ${PORT}`);
-      if (!chainInitializationSuccess) {
-        LogWarning(
-          'Server started, but chain handler failed to initialize. Service may be degraded.'
-        );
+  const shutdown = async (signal: string, exitCode: number) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`Received ${signal}, starting graceful shutdown...`);
+
+    try {
+      if (server) {
+        await new Promise<void>((resolve, reject) => {
+          server!.close((err: Error | undefined) => (err ? reject(err) : resolve()));
+        });
+        logger.info('HTTP server closed');
       }
-    })
-    .on('error', (err: any) => {
-      if (err.code === 'EADDRINUSE') {
-        const errorMessage = `FATAL: Port ${PORT} is already in use.`;
-        LogError(errorMessage, new Error(errorMessage));
-      } else {
-        LogError(`FATAL: Failed to start server:`, err);
-      }
-      process.exit(1); // Exit if server fails to start
-    });
-})(); // Immediately invoke the async function
+      await prisma.$disconnect();
+      logger.info('Prisma disconnected');
+      await shutdownOtel();
+      logger.info('OTel SDK shut down');
+    } catch (error) {
+      logErrorContext('Error during graceful shutdown', error);
+      process.exit(1);
+    }
+    process.exit(exitCode);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM', 0));
+  process.on('SIGINT', () => shutdown('SIGINT', 0));
+}
+
+// Execute main and capture the promise for export (e.g., for tests to await readiness)
+const initializationPromise = main().catch((error) => {
+  logErrorContext('Unhandled error during application main execution:', error);
+  if (process.env.NODE_ENV !== 'test') {
+    process.exit(1);
+  }
+  throw error;
+});
+
+export { app, appConfig, initializationPromise };

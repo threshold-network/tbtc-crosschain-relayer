@@ -1,0 +1,31 @@
+# Docs and metadata
+*.md
+LICENSE*
+CHANGELOG*
+README*
+
+# Tests and examples
+**/test
+**/tests
+**/__tests__
+**/example
+**/examples
+**/docs
+
+# Source maps and sources
+**/*.map
+**/*.ts
+**/*.tsx
+**/*.flow
+**/*.coffee
+**/*.mdx
+**/*.markdown
+
+# Types and bins not needed at runtime
+**/@types
+**/bin/*.cmd
+
+# Common bulky folders
+**/coverage
+**/.vite
+**/.cache

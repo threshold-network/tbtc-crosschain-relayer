@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Deposit {
+  id            String  @id
+  chainId       String
+  fundingTxHash String?
+  outputIndex   Int?
+  hashes        Json
+  receipt       Json
+  owner         String
+  status        Int
+  L1OutputEvent Json?
+  dates         Json
+  error         String?
+  wormholeInfo  Json?
+
+  @@index([chainId])
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
+  eventType String
+  depositId String?
+  data      Json
+  errorCode Int?
+  chainId   String?
+
+  @@index([chainId])
+}
+
+model Redemption {
+  id      String @id
+  chainId String
+  status  String
+  data    Json
+
+  @@index([chainId])
+}

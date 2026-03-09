@@ -1,0 +1,127 @@
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+databases:
+  - cluster_name: db-postgresql-nyc3-52188-tbtc-relayer-bot
+    db_name: defaultdb
+    db_user: doadmin
+    engine: PG
+    name: db-postgresql-nyc3-52188-tbtc-re
+    production: true
+    version: "17"
+features:
+  - buildpack-stack=ubuntu-22
+ingress:
+  rules:
+    - component:
+        name: tbtc-crosschain-relayer
+      match:
+        path:
+          prefix: /
+name: tbtc-crosschain-relayer
+region: nyc
+
+services:
+  - dockerfile_path: /Dockerfile
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db-postgresql-nyc3-52188-tbtc-re.DATABASE_URL}
+      - key: APP_NAME
+        scope: RUN_TIME
+        type: GENERAL
+        value: "tBTC Relayer (Prod, Starknet Sepolia)"
+      - key: APP_VERSION
+        scope: RUN_TIME
+        type: GENERAL
+        value: "1.0.0-dev"
+      - key: VERBOSE_APP
+        scope: RUN_TIME
+        type: GENERAL
+        value: "true"
+      - key: API_ONLY_MODE
+        scope: RUN_TIME
+        type: GENERAL
+        value: "false"
+      - key: ENABLE_CLEANUP_CRON
+        scope: RUN_TIME
+        type: GENERAL
+        value: "false"
+      - key: NODE_ENV
+        scope: RUN_TIME
+        type: GENERAL
+        value: "production"
+      - key: HOST_PORT
+        scope: RUN_TIME
+        type: GENERAL
+        value: "8080"
+      - key: APP_PORT
+        scope: RUN_TIME
+        type: GENERAL
+        value: "8080"
+      - key: CORS_ENABLED
+        scope: RUN_TIME
+        type: GENERAL
+        value: "true"
+      - key: USE_ENDPOINT
+        scope: RUN_TIME
+        type: GENERAL
+        value: "true"
+      - key: CORS_URL
+        scope: RUN_TIME
+        type: GENERAL
+        value: "https://tbtc-crosschain-relayer-swmku.ondigitalocean.app"
+      - key: CLEAN_QUEUED_TIME
+        scope: RUN_TIME
+        type: GENERAL
+        value: "48"
+      - key: CLEAN_FINALIZED_TIME
+        scope: RUN_TIME
+        type: GENERAL
+        value: "12"
+      - key: CLEAN_BRIDGED_TIME
+        scope: RUN_TIME
+        type: GENERAL
+        value: "12"
+      - key: SUPPORTED_CHAINS
+        scope: RUN_TIME
+        type: GENERAL
+        value: "arbitrumSepolia,baseSepolia,starknetTestnet"
+      - key: ETHEREUM_SEPOLIA_RPC
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_ARBITRUM_SEPOLIA_L2_RPC
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_BASE_SEPOLIA_L2_RPC
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_ARBITRUM_SEPOLIA_L2_WS_RPC
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_BASE_SEPOLIA_L2_WS_RPC
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_STARKNET_TESTNET_L2_RPC
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_ARBITRUM_SEPOLIA_PRIVATE_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_BASE_SEPOLIA_PRIVATE_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: CHAIN_STARKNET_TESTNET_PRIVATE_KEY
+        scope: RUN_TIME
+        type: SECRET
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: tlabs-xyz/tbtc-crosschain-relayer
+    health_check:
+      http_path: /status
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    name: tbtc-crosschain-relayer
+    source_dir: /

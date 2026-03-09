@@ -1,5 +1,5 @@
-export interface ResponseJson {
+export interface ResponseJson<T = unknown> {
   error: boolean | null;
   message: string | null;
-  data: any;
+  data: T;
 }

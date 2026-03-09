@@ -1,57 +1,58 @@
-import path from 'path';
-import fs from 'fs';
-import { initializeAuditLog } from '../utils/AuditLog';
+import dotenv from 'dotenv';
 
-// Set environment variables for testing
+// Load shared mock configurations from env.test.base
+dotenv.config({ path: 'env.test.base' });
+
+// Override or set Jest-specific environment variables
 process.env.NODE_ENV = 'test';
-process.env.APP_NAME = 'tBTC Relayer Test';
-process.env.VERBOSE_APP = 'false'; // Disable verbose logging during tests
-process.env.JSON_PATH = './tests/data/';
-process.env.AUDIT_LOG_DIR = './tests/logs';
-process.env.CLEAN_QUEUED_TIME = '1'; // 1 hour for faster testing
-process.env.CLEAN_FINALIZED_TIME = '1'; // 1 hour for faster testing
+process.env.APP_NAME = 'tBTC Relayer Test'; // Jest-specific app name
 
-// Create test directories
-const testDataDir = path.resolve('./tests/data');
-const testLogsDir = path.resolve('./tests/logs');
+// --- Server Ports for Jest test execution context ---
+process.env.HOST_PORT = '4001'; // Different port for tests
+process.env.APP_PORT = '3001'; // Different port for tests
 
-// Setup without using Jest globals in TypeScript
-// This avoids TypeScript errors while still using Jest's functionality
-const setupBeforeTests = () => {
-  // Create test directories if they don't exist
-  if (!fs.existsSync(testDataDir)) {
-    fs.mkdirSync(testDataDir, { recursive: true });
+// --- CORS URL for Jest test execution context ---
+// If env.test.base provides a CORS_URL, it will be used unless overridden here.
+// This explicitly sets it for the Jest context if a different one is needed.
+process.env.CORS_URL = 'http://localhost:4001';
+
+// --- Database Configuration for Jest test execution context ---
+// Check if we're in CI environment (DATABASE_URL potentially already set by CI runner for host-based steps)
+// or local development.
+const isCI = process.env.CI === 'true' || process.env.DATABASE_URL?.includes('postgres:5432');
+
+if (!isCI && !process.env.DATABASE_URL) {
+  // Local test database configuration for Jest (distinct from Docker service if needed)
+  process.env.POSTGRES_HOST = 'localhost';
+  process.env.POSTGRES_PORT = '5433'; // Example: Jest uses a separate local DB instance
+  process.env.POSTGRES_USER = 'test_user';
+  process.env.POSTGRES_PASSWORD = 'test_password';
+  process.env.POSTGRES_DB = 'tbtc_relayer_test';
+  process.env.DATABASE_URL =
+    'postgresql://postgres:postgres@localhost:5432/tbtc_relayer?schema=public';
+}
+// If DATABASE_URL is already set (e.g., by CI runner for host operations like Prisma migrate),
+// ensure other POSTGRES_ env vars are consistent if they are used by any test setup logic.
+// The primary source of truth for DB connection for tests should be DATABASE_URL itself.
+else if (process.env.DATABASE_URL) {
+  try {
+    const url = new URL(process.env.DATABASE_URL);
+    process.env.POSTGRES_HOST = url.hostname;
+    process.env.POSTGRES_PORT = url.port || '5432'; // Default to 5432 if not specified
+    process.env.POSTGRES_USER = url.username;
+    process.env.POSTGRES_PASSWORD = url.password;
+    // Extract DB name, removing leading slash and any query parameters
+    process.env.POSTGRES_DB = url.pathname.split('?')[0].slice(1);
+  } catch (e) {
+    console.error('[tests/setup.ts] Failed to parse DATABASE_URL for POSTGRES_ vars:', e);
+    // Depending on how strictly these are needed, you might throw or just log.
   }
+}
 
-  if (!fs.existsSync(testLogsDir)) {
-    fs.mkdirSync(testLogsDir, { recursive: true });
-  }
+// --- Supported Chains (Minimal set for focused and faster Jest tests) ---
+// This overrides the SUPPORTED_CHAINS loaded from env.test.base for the Jest execution context.
+process.env.SUPPORTED_CHAINS = 'arbitrumSepolia,baseSepolia,solanaDevnet,suiTestnet';
 
-  // Initialize audit log for tests
-  initializeAuditLog();
-};
-
-const cleanupAfterTests = () => {
-  // Clean up test data after all tests
-  if (fs.existsSync(testDataDir)) {
-    const files = fs.readdirSync(testDataDir);
-    for (const file of files) {
-      fs.unlinkSync(path.join(testDataDir, file));
-    }
-  }
-
-  // Clean up test logs after all tests
-  if (fs.existsSync(testLogsDir)) {
-    const files = fs.readdirSync(testLogsDir);
-    for (const file of files) {
-      fs.unlinkSync(path.join(testLogsDir, file));
-    }
-  }
-};
-
-// Using eval to avoid TypeScript errors while still using Jest's functionality
-// This is a workaround for TypeScript not recognizing Jest globals
-// @ts-ignore
-eval('beforeAll(setupBeforeTests)');
-// @ts-ignore
-eval('afterAll(cleanupAfterTests)');
+// Variables like VERBOSE_APP, API_ONLY_MODE, ENABLE_CLEANUP_CRON, CLEAN_*, JSON_PATH,
+// all mock private keys, RPC URLs, and block configurations are now expected to be loaded
+// from env.test.base by the dotenv.config() call at the top.

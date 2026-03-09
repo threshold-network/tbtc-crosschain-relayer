@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
-import { FundingTransaction } from '../types/FundingTransaction.type';
+import type { FundingTransaction } from '../types/FundingTransaction.type.js';
+import logger from './Logger.js';
 
 /**
  * Converts a hexadecimal string to a Buffer.
@@ -61,7 +62,19 @@ function doubleSha256(buffer: Buffer): Buffer {
 export function getTransactionHash(fundingTx: FundingTransaction): string {
   const serializedTx = serializeTransaction(fundingTx);
   const hash = doubleSha256(serializedTx);
-  return hash.reverse().toString('hex');
+  const reversedHash = hash.reverse().toString('hex');
+
+  logger.debug('getTransactionHash calculation', {
+    inputVersion: fundingTx.version,
+    inputVectorLen: fundingTx.inputVector?.length,
+    outputVectorLen: fundingTx.outputVector?.length,
+    serializedLength: serializedTx.length,
+    serializedHex: serializedTx.toString('hex').slice(0, 32) + '...',
+    hashBeforeReverse: Buffer.from(hash).reverse().toString('hex'), // Show original hash
+    hashAfterReverse: reversedHash,
+  });
+
+  return reversedHash;
 }
 
 /**
@@ -73,5 +86,5 @@ export function getTransactionHash(fundingTx: FundingTransaction): string {
 export function getFundingTxHash(fundingTx: FundingTransaction): string {
   const serializedTx = serializeTransaction(fundingTx);
   const hash = doubleSha256(serializedTx);
-  return hash.toString('hex');
+  return '0x' + hash.toString('hex');
 }

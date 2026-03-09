@@ -25,8 +25,7 @@ export class MockProvider extends EventEmitter {
   async getBlock(blockNumber: number): Promise<any> {
     return {
       number: blockNumber,
-      timestamp:
-        Math.floor(Date.now() / 1000) - (this.blockNumber - blockNumber) * 15, // 15 seconds per block
+      timestamp: Math.floor(Date.now() / 1000) - (this.blockNumber - blockNumber) * 15, // 15 seconds per block
       hash: ethers.utils.hexlify(ethers.utils.randomBytes(32)),
     };
   }
@@ -88,7 +87,7 @@ export class MockProvider extends EventEmitter {
  */
 export class MockContract extends EventEmitter {
   private address: string;
-  private functions: Map<string, Function> = new Map();
+  private functions: Map<string, (...args: any[]) => any> = new Map();
   private provider: MockProvider;
 
   constructor(address: string, provider: MockProvider) {
@@ -105,7 +104,7 @@ export class MockContract extends EventEmitter {
   /**
    * Mock a contract function
    */
-  mockFunction(name: string, implementation: Function): void {
+  mockFunction(name: string, implementation: (...args: any[]) => any): void {
     this.functions.set(name, implementation);
   }
 
@@ -139,8 +138,7 @@ export class MockContract extends EventEmitter {
  * Create a test deposit object
  */
 export function createTestDeposit(overrides: Partial<any> = {}): any {
-  const depositId =
-    overrides.id || ethers.utils.hexlify(ethers.utils.randomBytes(32));
+  const depositId = overrides.id || ethers.utils.hexlify(ethers.utils.randomBytes(32));
   const now = Date.now();
 
   return {

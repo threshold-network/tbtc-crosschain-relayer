@@ -1,12 +1,7 @@
-import fs from 'fs';
-import path from 'path';
-import { DepositStatus } from '../types/DepositStatus.enum';
-import { Deposit } from '../types/Deposit.type';
-import { LogError, LogMessage } from './Logs';
-
-// Constants
-const AUDIT_LOG_DIR = process.env.AUDIT_LOG_DIR || './logs';
-const AUDIT_LOG_FILE = process.env.AUDIT_LOG_FILE || 'deposit_audit.log';
+import { prisma, dbLimit } from './prisma.js';
+import { DepositStatus } from '../types/DepositStatus.enum.js';
+import type { Deposit } from '../types/Deposit.type.js';
+import { createLoggerWithCorrelation, logErrorContext } from './Logger.js';
 
 // Event types
 export enum AuditEventType {
@@ -16,102 +11,100 @@ export enum AuditEventType {
   DEPOSIT_INITIALIZED = 'DEPOSIT_INITIALIZED',
   DEPOSIT_FINALIZED = 'DEPOSIT_FINALIZED',
   DEPOSIT_DELETED = 'DEPOSIT_DELETED',
+  DEPOSIT_AWAITING_WORMHOLE_VAA = 'DEPOSIT_AWAITING_WORMHOLE_VAA',
+  DEPOSIT_BRIDGED = 'DEPOSIT_BRIDGED',
   ERROR = 'ERROR',
   API_REQUEST = 'API_REQUEST',
 }
 
-// Initialize the audit log directory
-export const initializeAuditLog = (): void => {
+/**
+ * Append to audit log
+ */
+export const appendToAuditLog = async (
+  eventType: AuditEventType,
+  depositId: string | null,
+  data: Record<string, unknown>,
+): Promise<void> => {
+  let errorCode: number | undefined = undefined;
+  if (data && typeof data.code === 'number') {
+    errorCode = data.code;
+    // Remove code from data to avoid duplication
+    const { code: _code, ...rest } = data;
+    data = rest;
+  }
+  await dbLimit(() =>
+    prisma.auditLog.create({
+      data: {
+        eventType,
+        depositId,
+        data,
+        errorCode,
+      },
+    }),
+  );
+
+  // Also log to SigNoz via OTLP when OTEL_LOGS_ENABLED (log export)
+  const logCorrelation: Record<string, string> = {
+    auditEventType: eventType,
+    ...(depositId && depositId !== 'no-deposit-id' && { depositId }),
+  };
+  const depositData = data?.deposit as Record<string, unknown> | undefined;
+  if (depositData?.fundingTxHash) logCorrelation.fundingTxHash = String(depositData.fundingTxHash);
+  if (data?.chainName) logCorrelation.chainName = String(data.chainName);
+  if (data?.txHash) logCorrelation.txHash = String(data.txHash);
+  if (data?.initializeTxHash) logCorrelation.initializeTxHash = String(data.initializeTxHash);
+  if (data?.finalizeTxHash) logCorrelation.finalizeTxHash = String(data.finalizeTxHash);
+  createLoggerWithCorrelation(logCorrelation).info(
+    { depositId, eventType, data, errorCode },
+    `Audit: ${eventType}`,
+  );
+};
+
+/**
+ * Get all audit logs
+ */
+export const getAuditLogs = async () => {
   try {
-    // Get absolute path
-    const auditLogDir = path.resolve(AUDIT_LOG_DIR);
-    const auditLogPath = path.resolve(auditLogDir, AUDIT_LOG_FILE);
-
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(auditLogDir)) {
-      fs.mkdirSync(auditLogDir, { recursive: true });
-      LogMessage(`Created audit log directory: ${auditLogDir}`);
-    }
-
-    // Create the log file if it doesn't exist
-    if (!fs.existsSync(auditLogPath)) {
-      fs.writeFileSync(auditLogPath, '', 'utf8');
-      LogMessage(`Created audit log file: ${auditLogPath}`);
-    }
+    return await dbLimit(() => prisma.auditLog.findMany({ orderBy: { timestamp: 'desc' } }));
   } catch (error) {
-    LogError('Failed to initialize audit log', error as Error);
+    logErrorContext('Failed to fetch audit logs', error);
+    return [];
   }
 };
 
 /**
- * Append an event to the audit log
- * @param eventType Type of the event
- * @param depositId ID of the deposit
- * @param data Additional data to log
+ * Get audit logs by depositId
  */
-export const appendToAuditLog = (
-  eventType: AuditEventType,
-  depositId: string,
-  data: any = {}
-): void => {
+export const getAuditLogsByDepositId = async (depositId: string) => {
   try {
-    // Get absolute paths
-    const auditLogDir = path.resolve(AUDIT_LOG_DIR);
-    const auditLogPath = path.resolve(auditLogDir, AUDIT_LOG_FILE);
-
-    // Ensure directory exists before appending (add a check just in case)
-    if (!fs.existsSync(auditLogDir)) {
-      throw new Error(`Audit log directory does not exist: ${auditLogDir}`);
-    }
-    // Ensure file exists before appending (initializeAuditLog should handle this)
-    if (!fs.existsSync(auditLogPath)) {
-      // Optionally recreate it if missing, or throw error
-      fs.writeFileSync(auditLogPath, '', 'utf8');
-      LogMessage(`Audit log file was missing, recreated: ${auditLogPath}`);
-      // OR: throw new Error(`Audit log file does not exist: ${auditLogPath}`);
-    }
-
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      eventType,
-      depositId,
-      data,
-    };
-
-    const logString = JSON.stringify(logEntry) + '\n';
-
-    // Append to log file
-    fs.appendFileSync(auditLogPath, logString, 'utf8');
+    return await dbLimit(() =>
+      prisma.auditLog.findMany({
+        where: { depositId },
+        orderBy: { timestamp: 'desc' },
+      }),
+    );
   } catch (error) {
-    LogError('Failed to write to audit log', error as Error);
-    console.error('AUDIT LOG ENTRY (FALLBACK):', {
-      timestamp: new Date().toISOString(),
-      eventType,
-      depositId,
-      data,
-    });
+    logErrorContext('Failed to fetch audit logs by depositId', error);
+    return [];
   }
 };
 
 /**
  * Log status changes for a deposit
- * @param deposit The deposit object
- * @param oldStatus Previous status (optional)
- * @param newStatus New status
  */
-export const logStatusChange = (
+export const logStatusChange = async (
   deposit: Deposit,
   newStatus: DepositStatus,
-  oldStatus?: DepositStatus
-): void => {
+  oldStatus?: DepositStatus,
+): Promise<void> => {
   const statusMap = {
     [DepositStatus.QUEUED]: 'QUEUED',
     [DepositStatus.INITIALIZED]: 'INITIALIZED',
     [DepositStatus.FINALIZED]: 'FINALIZED',
+    [DepositStatus.AWAITING_WORMHOLE_VAA]: 'AWAITING_WORMHOLE_VAA',
+    [DepositStatus.BRIDGED]: 'BRIDGED',
   };
-
-  appendToAuditLog(AuditEventType.STATUS_CHANGED, deposit.id, {
+  await appendToAuditLog(AuditEventType.STATUS_CHANGED, deposit.id, {
     from: oldStatus !== undefined ? statusMap[oldStatus] : 'UNKNOWN',
     to: statusMap[newStatus],
     deposit: {
@@ -125,10 +118,9 @@ export const logStatusChange = (
 
 /**
  * Log deposit creation
- * @param deposit The deposit object
  */
-export const logDepositCreated = (deposit: Deposit): void => {
-  appendToAuditLog(AuditEventType.DEPOSIT_CREATED, deposit.id, {
+export const logDepositCreated = async (deposit: Deposit): Promise<void> => {
+  await appendToAuditLog(AuditEventType.DEPOSIT_CREATED, deposit.id, {
     deposit: {
       id: deposit.id,
       fundingTxHash: deposit.fundingTxHash,
@@ -142,10 +134,9 @@ export const logDepositCreated = (deposit: Deposit): void => {
 
 /**
  * Log deposit initialization
- * @param deposit The deposit object
  */
-export const logDepositInitialized = (deposit: Deposit): void => {
-  appendToAuditLog(AuditEventType.DEPOSIT_INITIALIZED, deposit.id, {
+export const logDepositInitialized = async (deposit: Deposit): Promise<void> => {
+  await appendToAuditLog(AuditEventType.DEPOSIT_INITIALIZED, deposit.id, {
     deposit: {
       id: deposit.id,
       fundingTxHash: deposit.fundingTxHash,
@@ -160,10 +151,9 @@ export const logDepositInitialized = (deposit: Deposit): void => {
 
 /**
  * Log deposit finalization
- * @param deposit The deposit object
  */
-export const logDepositFinalized = (deposit: Deposit): void => {
-  appendToAuditLog(AuditEventType.DEPOSIT_FINALIZED, deposit.id, {
+export const logDepositFinalized = async (deposit: Deposit): Promise<void> => {
+  await appendToAuditLog(AuditEventType.DEPOSIT_FINALIZED, deposit.id, {
     deposit: {
       id: deposit.id,
       fundingTxHash: deposit.fundingTxHash,
@@ -178,11 +168,9 @@ export const logDepositFinalized = (deposit: Deposit): void => {
 
 /**
  * Log deposit deletion
- * @param deposit The deposit object
- * @param reason Reason for deletion
  */
-export const logDepositDeleted = (deposit: Deposit, reason: string): void => {
-  appendToAuditLog(AuditEventType.DEPOSIT_DELETED, deposit.id, {
+export const logDepositDeleted = async (deposit: Deposit, reason: string): Promise<void> => {
+  await appendToAuditLog(AuditEventType.DEPOSIT_DELETED, deposit.id, {
     deposit: {
       id: deposit.id,
       fundingTxHash: deposit.fundingTxHash,
@@ -199,20 +187,15 @@ export const logDepositDeleted = (deposit: Deposit, reason: string): void => {
 
 /**
  * Log API requests related to deposits
- * @param endpoint API endpoint
- * @param method HTTP method
- * @param depositId Deposit ID (if applicable)
- * @param requestData Request data
- * @param responseStatus Response status code
  */
-export const logApiRequest = (
+export const logApiRequest = async (
   endpoint: string,
   method: string,
   depositId: string | null,
-  requestData: any = {},
-  responseStatus: number = 200
-): void => {
-  appendToAuditLog(AuditEventType.API_REQUEST, depositId || 'no-deposit-id', {
+  requestData: Record<string, unknown> = {},
+  responseStatus: number = 200,
+): Promise<void> => {
+  await appendToAuditLog(AuditEventType.API_REQUEST, depositId || 'no-deposit-id', {
     endpoint,
     method,
     requestData,
@@ -222,17 +205,48 @@ export const logApiRequest = (
 
 /**
  * Log errors related to deposits
- * @param depositId Deposit ID
- * @param errorMessage Error message
- * @param errorObj Error object
  */
-export const logDepositError = (
+export const logDepositError = async (
   depositId: string,
-  errorMessage: string,
-  errorObj: any = {}
-): void => {
-  appendToAuditLog(AuditEventType.ERROR, depositId, {
-    message: errorMessage,
-    error: errorObj.message || JSON.stringify(errorObj),
+  message: string,
+  extra?: Record<string, unknown>,
+): Promise<void> => {
+  const data = { message, ...(extra || {}) };
+  await appendToAuditLog(AuditEventType.ERROR, depositId, data);
+};
+
+/**
+ * Log deposit finalization
+ * @param deposit The deposit object
+ */
+export const logDepositAwaitingWormholeVAA = (deposit: Deposit): void => {
+  appendToAuditLog(AuditEventType.DEPOSIT_AWAITING_WORMHOLE_VAA, deposit.id, {
+    deposit: {
+      id: deposit.id,
+      fundingTxHash: deposit.fundingTxHash,
+      owner: deposit.owner,
+      l2DepositOwner: deposit.L1OutputEvent?.l2DepositOwner,
+      status: 'AWAITING_WORMHOLE_VAA',
+      awaitingWormholeVAAMessageSince: deposit.dates.awaitingWormholeVAAMessageSince,
+    },
+    txHash: deposit.hashes.eth.finalizeTxHash,
+  });
+};
+
+/**
+ * Log deposit finalization
+ * @param deposit The deposit object
+ */
+export const logDepositBridged = (deposit: Deposit): void => {
+  appendToAuditLog(AuditEventType.DEPOSIT_BRIDGED, deposit.id, {
+    deposit: {
+      id: deposit.id,
+      fundingTxHash: deposit.fundingTxHash,
+      owner: deposit.owner,
+      l2DepositOwner: deposit.L1OutputEvent?.l2DepositOwner,
+      status: 'BRIDGED',
+      bridgedAt: deposit.dates.bridgedAt,
+    },
+    txHash: deposit.hashes.solana.bridgeTxHash,
   });
 };

@@ -42,23 +42,7 @@ npm install
 
 ### Running Tests
 
-You can run tests using the provided script:
-
-```bash
-# Make the script executable
-chmod +x scripts/run-tests.sh
-
-# Run all tests
-./scripts/run-tests.sh
-
-# Run specific test categories
-./scripts/run-tests.sh unit
-./scripts/run-tests.sh integration
-./scripts/run-tests.sh e2e
-./scripts/run-tests.sh coverage
-```
-
-Alternatively, you can use npm scripts directly:
+You can run tests using these commands:
 
 ```bash
 # Run all tests

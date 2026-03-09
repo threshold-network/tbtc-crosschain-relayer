@@ -1,0 +1,13 @@
+ignores:
+  - "@types/*"
+  - typescript
+  - ts-jest
+  - jest
+  - ts-node
+  - tsx
+  - rimraf
+  - depcheck
+  - improved-yarn-audit
+  - eslint-import-resolver-typescript
+  - pino-pretty
+skip-missing: true

@@ -1,12 +1,9 @@
-import { Request, Response } from 'express';
-import CustomResponse from '../helpers/CustomResponse.helper';
-import {
-  getAllJsonOperations,
-  getAllJsonOperationsByStatus,
-} from '../utils/JsonUtils';
-import { LogError } from '../utils/Logs';
-import { Deposit } from '../types/Deposit.type';
-import { DepositStatus } from '../types/DepositStatus.enum';
+import type { Request, Response } from 'express';
+import CustomResponse from '../helpers/CustomResponse.helper.js';
+import { logErrorContext } from '../utils/Logger.js';
+import type { Deposit } from '../types/Deposit.type.js';
+import { DepositStatus } from '../types/DepositStatus.enum.js';
+import { prisma } from '../utils/prisma.js';
 
 /**
  * @name Operations
@@ -22,13 +19,21 @@ export default class Operations {
    * @method GET
    * @returns {Array<Deposit>} A promise that resolves to an array of deposits.
    */
-  getAllOperations = async (req: Request, res: Response): Promise<void> => {
+  getAllOperations = async (req: Request, res: Response, chainName: string): Promise<void> => {
     const response = new CustomResponse(res);
     try {
-      const operations: Array<Deposit> = await getAllJsonOperations();
+      const whereClause: any = {};
+      if (chainName && chainName.toLowerCase() !== 'all') {
+        whereClause.chainId = chainName;
+      }
+
+      const operations: Deposit[] = await prisma.deposit.findMany({
+        where: whereClause,
+        orderBy: { dates: 'desc' },
+      });
       response.ok('OK - Retrieved all operations', operations);
     } catch (err) {
-      LogError('🚀 ~ getAllOperations ~ err:', err as Error);
+      logErrorContext('Error fetching all operations:', err);
       response.ko((err as Error).message);
     }
   };
@@ -44,17 +49,23 @@ export default class Operations {
    */
   getAllQueuedOperations = async (
     req: Request,
-    res: Response
+    res: Response,
+    chainName: string,
   ): Promise<void> => {
     const response = new CustomResponse(res);
-
     try {
-      const operations: Array<Deposit> = await getAllJsonOperationsByStatus(
-        DepositStatus.QUEUED
-      );
+      const whereClause: any = { status: DepositStatus.QUEUED };
+      if (chainName && chainName.toLowerCase() !== 'all') {
+        whereClause.chainId = chainName;
+      }
+
+      const operations: Deposit[] = await prisma.deposit.findMany({
+        where: whereClause,
+        orderBy: { dates: 'desc' },
+      });
       return response.ok('OK - Retrieved all queued operations', operations);
     } catch (err) {
-      LogError('🚀 ~ getAllQueuedOperations ~ err:', err as Error);
+      logErrorContext('Error fetching queued operations:', err);
       return response.ko((err as Error).message);
     }
   };
@@ -70,20 +81,23 @@ export default class Operations {
    */
   getAllInitializedOperations = async (
     req: Request,
-    res: Response
+    res: Response,
+    chainName: string,
   ): Promise<void> => {
     const response = new CustomResponse(res);
-
     try {
-      const operations: Array<Deposit> = await getAllJsonOperationsByStatus(
-        DepositStatus.INITIALIZED
-      );
-      return response.ok(
-        'OK - Retrieved all initialized operations',
-        operations
-      );
+      const whereClause: any = { status: DepositStatus.INITIALIZED };
+      if (chainName && chainName.toLowerCase() !== 'all') {
+        whereClause.chainId = chainName;
+      }
+
+      const operations: Deposit[] = await prisma.deposit.findMany({
+        where: whereClause,
+        orderBy: { dates: 'desc' },
+      });
+      return response.ok('OK - Retrieved all initialized operations', operations);
     } catch (err) {
-      LogError('🚀 ~ getAllInitializedOperations ~ err:', err as Error);
+      logErrorContext('Error fetching initialized operations:', err);
       return response.ko((err as Error).message);
     }
   };
@@ -99,17 +113,22 @@ export default class Operations {
    */
   getAllFinalizedOperations = async (
     req: Request,
-    res: Response
+    res: Response,
+    chainName: string,
   ): Promise<void> => {
     const response = new CustomResponse(res);
-
     try {
-      const operations: Array<Deposit> = await getAllJsonOperationsByStatus(
-        DepositStatus.FINALIZED
-      );
+      const whereClause: any = { status: DepositStatus.FINALIZED };
+      if (chainName && chainName.toLowerCase() !== 'all') {
+        whereClause.chainId = chainName;
+      }
+      const operations: Deposit[] = await prisma.deposit.findMany({
+        where: whereClause,
+        orderBy: { dates: 'desc' },
+      });
       return response.ok('OK - Retrieved all finalized operations', operations);
     } catch (err) {
-      LogError('🚀 ~ getAllFinalizedOperations ~ err:', err as Error);
+      logErrorContext('Error fetching finalized operations:', err);
       return response.ko((err as Error).message);
     }
   };

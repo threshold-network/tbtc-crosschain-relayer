@@ -59,9 +59,7 @@ export const L2BitcoinDepositorABI = [
   },
   {
     anonymous: false,
-    inputs: [
-      { indexed: false, internalType: 'uint8', name: 'version', type: 'uint8' },
-    ],
+    inputs: [{ indexed: false, internalType: 'uint8', name: 'version', type: 'uint8' }],
     name: 'Initialized',
     type: 'event',
   },
@@ -85,9 +83,7 @@ export const L2BitcoinDepositorABI = [
     type: 'event',
   },
   {
-    inputs: [
-      { internalType: 'address', name: '_l1BitcoinDepositor', type: 'address' },
-    ],
+    inputs: [{ internalType: 'address', name: '_l1BitcoinDepositor', type: 'address' }],
     name: 'attachL1BitcoinDepositor',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -213,9 +209,7 @@ export const L2BitcoinDepositorABI = [
   {
     inputs: [],
     name: 'wormholeRelayer',
-    outputs: [
-      { internalType: 'contract IWormholeRelayer', name: '', type: 'address' },
-    ],
+    outputs: [{ internalType: 'contract IWormholeRelayer', name: '', type: 'address' }],
     stateMutability: 'view',
     type: 'function',
   },

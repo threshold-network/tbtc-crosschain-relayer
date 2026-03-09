@@ -1,16 +1,32 @@
 /node_modules
-package-lock.json
 
 /data
 /dist
 
-# ADD .ENV FILE !!
 .env
 .env.dev
 
 .cursor
+memory-bank
 
 /coverage
+.eslintcache
 
 /logs
 /data
+
+redemptions/
+
+/generated
+
+*.md
+*.db
+tasks
+
+prisma/memory:
+
+*.diff
+
+*.log
+package-lock.json
+external/
